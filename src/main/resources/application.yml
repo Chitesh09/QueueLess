@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: queueless-backend
+  profiles:
+    active: dev
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3307/queueless_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${SPRING_DATASOURCE_USERNAME:queueless_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:queueless_pass}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:localhost}
+      port: ${SPRING_REDIS_PORT:6379}
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+queueless:
+  jwt:
+    secret: 9a2f8c4e7b1a3d6f8e2c5b9a4f7e1c3d6b8a2f4e7b1a3d6f8e2c5b9a4f7e1c3d
+    expiration-ms: 86400000 # 24 hours
+    refresh-expiration-ms: 604800000 # 7 days
+  qr:
+    secret: super-secret-qr-hmac-key-queueless-2026
+  queue:
+    max-starvation-threshold-sec: 600
+    default-grace-period-min: 15
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+logging:
+  level:
+    root: INFO
+    com.queueless: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: INFO
