@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .glass-card {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .glass-card-hover {
+    transition: all 0.25s ease-in-out;
+  }
+  .glass-card-hover:hover {
+    border-color: rgba(56, 189, 248, 0.4);
+    box-shadow: 0 0 25px -5px rgba(2, 132, 199, 0.3);
+  }
+}
+
+/* Global High Contrast Accessibility Theme */
+html.high-contrast {
+  filter: contrast(140%);
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+html.high-contrast .glass-card {
+  background: #000000 !important;
+  border: 2px solid #ffffff !important;
+  color: #ffffff !important;
+}
+
+html.high-contrast button,
+html.high-contrast input,
+html.high-contrast select {
+  border-width: 2px !important;
+  border-color: #ffffff !important;
+}
+
+/* Light Theme Overrides */
+html:not(.dark):not(.high-contrast) {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html:not(.dark):not(.high-contrast) .glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  color: #0f172a;
+}
+
+html:not(.dark):not(.high-contrast) input,
+html:not(.dark):not(.high-contrast) select {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+html:not(.dark):not(.high-contrast) body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+/* Custom Pulsing Animation */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2.5s infinite ease-in-out;
+}
+
+/* Prefers Reduced Motion Accessibility Rule */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
