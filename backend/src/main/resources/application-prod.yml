@@ -14,13 +14,16 @@ spring:
       max-lifetime: 1800000
       connection-timeout: 30000
 
-  data:
-    redis:
-      host: ${SPRING_REDIS_HOST:redis}
-      port: ${SPRING_REDIS_PORT:6379}
-      password: ${SPRING_REDIS_PASSWORD:}
-      timeout: 3000ms
-
+  spring:
+    data:
+      redis:
+        host: ${SPRING_REDIS_HOST}
+        port: ${SPRING_REDIS_PORT:6379}
+        username: ${SPRING_REDIS_USERNAME:default}
+        password: ${SPRING_REDIS_PASSWORD}
+        timeout: 3000ms
+        ssl:
+          enabled: true
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -32,9 +35,10 @@ server:
     include-stacktrace: never
     include-message: always
 
-jwt:
-  secret: ${JWT_SECRET}
-  expiration: ${JWT_EXPIRATION:86400000} # 24 hours
+queueless:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION:86400000}
 
 management:
   endpoints:
