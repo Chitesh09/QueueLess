@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { API_BASE_URL } from '../constants/config';
 
 export const ErrorPage = ({ message, onRetry }) => {
   return (
@@ -12,7 +13,7 @@ export const ErrorPage = ({ message, onRetry }) => {
         <div className="space-y-2">
           <h1 className="text-xl font-bold text-white">Server Communication Error</h1>
           <p className="text-xs text-slate-400">
-            {message || 'Unable to connect to Spring Boot backend server at http://localhost:8080'}
+            {message || `Unable to connect to backend server at ${API_BASE_URL}`}
           </p>
         </div>
         {onRetry && (

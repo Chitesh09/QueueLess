@@ -13,7 +13,8 @@ import { QRCodePassModal } from '../components/queue/QRCodePassModal';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
-import { Users, Clock, Server, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Users, Clock, Server, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { API_BASE_URL } from '../constants/config';
 
 export const QueuePage = () => {
   const [selectedServiceId, setSelectedServiceId] = useState(1);
@@ -22,7 +23,7 @@ export const QueuePage = () => {
   const [isQRModalOpen, setIsQRModalOpen] = useState(false);
 
   // TanStack Query Hooks
-  const { data: services, isLoading: isServicesLoading, error: servicesError } = useBranchServicesQuery(1);
+  const { data: services, isLoading: isServicesLoading, error: servicesError, refetch: refetchServices } = useBranchServicesQuery(1);
   const { data: activeToken } = useTokenStatusQuery(activeTokenId);
 
   const joinQueueMutation = useJoinQueueMutation((newToken) => {
@@ -47,6 +48,17 @@ export const QueuePage = () => {
       tokenId: activeToken.id,
       qrSignature: activeToken.qrSignature,
     });
+  };
+
+  const formatErrorMessage = (err) => {
+    if (!err) return 'Service catalog currently unavailable.';
+    if (err.response) {
+      return `HTTP ${err.response.status}: ${err.response.data?.message || err.response.data?.detail || err.statusText || 'Backend response error'}`;
+    }
+    if (err.request) {
+      return `Network Error: Unable to reach backend server at ${API_BASE_URL}`;
+    }
+    return err.message || 'Service loading failed';
   };
 
   return (
@@ -121,9 +133,19 @@ export const QueuePage = () => {
                 <Skeleton className="h-20 w-full rounded-2xl" />
               </div>
             ) : servicesError ? (
-              <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" />
-                Failed to load services from backend at http://localhost:8080
+              <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{formatErrorMessage(servicesError)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => refetchServices()}
+                  className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 font-bold text-[11px] flex items-center gap-1 transition-all shrink-0"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Retry
+                </button>
               </div>
             ) : (
               <div className="space-y-3">

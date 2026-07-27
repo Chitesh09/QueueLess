@@ -4,7 +4,7 @@ if (typeof window !== 'undefined' && !window.global) {
 
 import { Client } from '@stomp/stompjs';
 import SockJSImport from 'sockjs-client';
-import { API_BASE_URL } from '../constants/config';
+import { API_BASE_URL, WS_URL } from '../constants/config';
 import { authService } from './authService';
 
 const SockJS = typeof SockJSImport === 'function' ? SockJSImport : (SockJSImport && SockJSImport.default) || window.SockJS;
@@ -23,19 +23,19 @@ class WebSocketService {
     }
 
     try {
-      const token = authService.getToken();
-      const wsUrl = `${API_BASE_URL}/ws`;
+      const token = authService.getStoredToken();
+      const httpWsEndpoint = `${API_BASE_URL}/ws`;
 
       this.client = new Client({
         webSocketFactory: () => {
           if (typeof SockJS === 'function') {
-            return new SockJS(wsUrl);
+            return new SockJS(httpWsEndpoint);
           }
           // Fallback to native browser WebSocket if SockJS is unavailable
-          return new WebSocket(wsUrl.replace(/^http/, 'ws'));
+          return new WebSocket(WS_URL);
         },
         connectHeaders: {
-          Authorization: `Bearer ${token}`,
+          Authorization: token ? `Bearer ${token}` : '',
           'X-Tenant-ID': '1',
         },
         debug: () => {},

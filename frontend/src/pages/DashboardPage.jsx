@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Shield, Server, User, Building, Activity, CheckCircle2 } from 'lucide-react';
+import { API_BASE_URL } from '../constants/config';
 
 export const DashboardPage = () => {
   const { user } = useAuth();
@@ -18,7 +19,7 @@ export const DashboardPage = () => {
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
               Authenticated Session Active
             </Badge>
-            <span className="text-xs text-slate-400 font-mono">Phase 1 Architecture Baseline</span>
+            <span className="text-xs text-slate-400 font-mono">Enterprise Operations Hub</span>
           </div>
 
           <h1 className="text-2xl md:text-3xl font-extrabold text-white">
@@ -40,16 +41,16 @@ export const DashboardPage = () => {
             <Server className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-black text-white font-mono">ONLINE</div>
-          <p className="text-[11px] text-emerald-400 font-medium">http://localhost:8080</p>
+          <p className="text-[11px] text-emerald-400 font-medium truncate font-mono">{API_BASE_URL}</p>
         </Card>
 
         <Card className="space-y-2 p-5">
           <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
-            <span>MySQL 8 Database</span>
+            <span>TiDB Cloud / MySQL 8</span>
             <Activity className="w-4 h-4 text-sky-400" />
           </div>
-          <div className="text-2xl font-black text-white font-mono">Port 3307</div>
-          <p className="text-[11px] text-sky-400 font-medium">Flyway Schema Applied</p>
+          <div className="text-2xl font-black text-white font-mono">CONNECTED</div>
+          <p className="text-[11px] text-sky-400 font-medium">Flyway Migrations Active</p>
         </Card>
 
         <Card className="space-y-2 p-5">
@@ -58,7 +59,7 @@ export const DashboardPage = () => {
             <Building className="w-4 h-4 text-purple-400" />
           </div>
           <div className="text-2xl font-black text-white font-mono">City Care</div>
-          <p className="text-[11px] text-purple-400 font-medium">Multi-Tenant Header Enforced</p>
+          <p className="text-[11px] text-purple-400 font-medium">Multi-Tenant Isolation Enforced</p>
         </Card>
 
         <Card className="space-y-2 p-5">
