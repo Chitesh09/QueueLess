@@ -9,10 +9,14 @@ import com.queueless.dto.response.TokenResponse;
 import com.queueless.queue.ETAEngine;
 import com.queueless.queue.QueueEngine;
 import com.queueless.queue.TokenService;
+import com.queueless.security.GuestRateLimiter;
 import com.queueless.security.GuestSessionService;
 import com.queueless.security.JwtTokenProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,17 +32,20 @@ public class QueueController {
     private final ETAEngine etaEngine;
     private final JwtTokenProvider tokenProvider;
     private final GuestSessionService guestSessionService;
+    private final GuestRateLimiter guestRateLimiter;
 
     public QueueController(QueueEngine queueEngine,
                            TokenService tokenService,
                            ETAEngine etaEngine,
                            JwtTokenProvider tokenProvider,
-                           GuestSessionService guestSessionService) {
+                           GuestSessionService guestSessionService,
+                           GuestRateLimiter guestRateLimiter) {
         this.queueEngine = queueEngine;
         this.tokenService = tokenService;
         this.etaEngine = etaEngine;
         this.tokenProvider = tokenProvider;
         this.guestSessionService = guestSessionService;
+        this.guestRateLimiter = guestRateLimiter;
     }
 
     @PostMapping("/services/{serviceId}/tokens")
@@ -47,7 +54,9 @@ public class QueueController {
                                                                  @RequestBody(required = false) JoinQueueRequest request,
                                                                  @RequestHeader(value = "Authorization", required = false) String authHeader,
                                                                  @RequestHeader(value = "X-Guest-Token", required = false) String guestTokenHeader,
-                                                                 @RequestHeader(value = "X-Guest-ID", required = false) String legacyGuestIdHeader) {
+                                                                 @RequestHeader(value = "X-Guest-ID", required = false) String legacyGuestIdHeader,
+                                                                 HttpServletRequest httpRequest,
+                                                                 HttpServletResponse httpResponse) {
         Long userId = null;
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
@@ -60,10 +69,18 @@ public class QueueController {
         String issuedGuestToken = null;
 
         if (userId == null) {
-            // Cryptographically verify or generate signed guest session
-            String tokenCandidate = (guestTokenHeader != null && !guestTokenHeader.isBlank())
-                    ? guestTokenHeader
-                    : legacyGuestIdHeader;
+            // Apply IP-based rate limiting on unauthenticated guest joins to mitigate automated queue flooding
+            String clientIp = httpRequest != null ? httpRequest.getHeader("X-Forwarded-For") : null;
+            if (clientIp == null || clientIp.isBlank()) {
+                clientIp = httpRequest != null ? httpRequest.getRemoteAddr() : "127.0.0.1";
+            } else if (clientIp.contains(",")) {
+                clientIp = clientIp.split(",")[0].trim();
+            }
+            guestRateLimiter.checkRateLimit(clientIp);
+
+            // Cryptographically verify or generate signed guest session from header or cookie
+            Cookie[] cookies = httpRequest != null ? httpRequest.getCookies() : null;
+            String tokenCandidate = guestSessionService.extractTokenCandidate(guestTokenHeader, legacyGuestIdHeader, cookies);
 
             GuestSessionService.GuestSession session = guestSessionService.resolveOrCreateGuestSession(tokenCandidate);
             guestSessionId = session.guestId();
@@ -76,6 +93,13 @@ public class QueueController {
         var responseBuilder = ResponseEntity.status(HttpStatus.CREATED);
         if (issuedGuestToken != null) {
             responseBuilder.header("X-Guest-Token", issuedGuestToken);
+            if (httpResponse != null) {
+                Cookie cookie = new Cookie("queueless_guest_token", issuedGuestToken);
+                cookie.setPath("/");
+                cookie.setMaxAge(86400); // 24 hours
+                cookie.setHttpOnly(true);
+                httpResponse.addCookie(cookie);
+            }
         }
         return responseBuilder.body(ApiResponse.success(tokenResponse, "Joined queue successfully"));
     }

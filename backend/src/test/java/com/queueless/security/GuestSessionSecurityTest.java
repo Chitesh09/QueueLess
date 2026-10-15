@@ -85,4 +85,48 @@ public class GuestSessionSecurityTest {
         assertTrue(resolved.isNew(), "Expired token must trigger a newly issued session");
         assertNotEquals("guest_expired_user", resolved.guestId());
     }
+
+    @Test
+    @DisplayName("Replay of expired guest token fails and cannot impersonate prior identity")
+    public void testReplayOfExpiredTokenFails() {
+        String expiredToken = guestSessionService.createSignedTokenForGuest("guest_replay_victim", -1000L);
+        String extracted = guestSessionService.validateAndExtractGuestId(expiredToken);
+        assertNull(extracted, "Expired token replay must fail validation and extract null");
+    }
+
+    @Test
+    @DisplayName("Cookie fallback resolves signed token when X-Guest-Token header is absent")
+    public void testCookieFallbackResolution() {
+        GuestSessionService.GuestSession initial = guestSessionService.createNewGuestSession();
+        jakarta.servlet.http.Cookie cookie = new jakarta.servlet.http.Cookie("queueless_guest_token", initial.signedToken());
+
+        String extractedCandidate = guestSessionService.extractTokenCandidate(null, null, new jakarta.servlet.http.Cookie[]{cookie});
+        assertEquals(initial.signedToken(), extractedCandidate);
+
+        GuestSessionService.GuestSession resolved = guestSessionService.resolveOrCreateGuestSession(extractedCandidate);
+        assertEquals(initial.guestId(), resolved.guestId());
+    }
+
+    @Test
+    @DisplayName("GuestRateLimiter permits normal requests and blocks when threshold is exceeded")
+    public void testGuestRateLimiterThreshold() {
+        GuestRateLimiter limiter = new GuestRateLimiter();
+        limiter.resetForTesting();
+        String testIp = "192.168.1.100";
+
+        // First 10 requests must succeed
+        for (int i = 0; i < 10; i++) {
+            assertDoesNotThrow(() -> limiter.checkRateLimit(testIp));
+        }
+
+        // 11th request must throw BusinessException (Rate limit exceeded)
+        com.queueless.common.exception.BusinessException ex = assertThrows(
+                com.queueless.common.exception.BusinessException.class,
+                () -> limiter.checkRateLimit(testIp)
+        );
+        assertTrue(ex.getMessage().contains("Rate limit exceeded"));
+
+        // Different IP address is not affected
+        assertDoesNotThrow(() -> limiter.checkRateLimit("192.168.1.101"));
+    }
 }

@@ -44,8 +44,21 @@ ALTER TABLE tokens MODIFY COLUMN user_id BIGINT NULL;
 CREATE INDEX idx_token_guest_active ON tokens (guest_session_id, service_id, status);
 CREATE UNIQUE INDEX uk_token_service_date_number ON tokens (service_id, sequence_date, token_number);
 
--- 8. Backfill token_sequences for pre-existing tokens
+-- 8. Backfill token_sequences starting at highest previously allocated number (or count if higher)
 INSERT INTO token_sequences (service_id, sequence_date, last_number, created_at, updated_at)
-SELECT service_id, sequence_date, COUNT(*), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+SELECT 
+    service_id, 
+    sequence_date, 
+    GREATEST(
+        COUNT(*),
+        COALESCE(MAX(
+            CASE 
+                WHEN token_number REGEXP '[0-9]+$' THEN CAST(REGEXP_REPLACE(token_number, '^.*-', '') AS SIGNED)
+                ELSE 0 
+            END
+        ), 0)
+    ) AS last_number,
+    CURRENT_TIMESTAMP, 
+    CURRENT_TIMESTAMP
 FROM tokens
 GROUP BY service_id, sequence_date;

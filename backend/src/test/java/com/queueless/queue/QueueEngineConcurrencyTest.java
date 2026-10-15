@@ -3,6 +3,7 @@ package com.queueless.queue;
 import com.queueless.common.exception.BusinessException;
 import com.queueless.domain.entity.Counter;
 import com.queueless.domain.entity.Token;
+import com.queueless.domain.entity.TokenSequence;
 import com.queueless.domain.repository.CounterRepository;
 import com.queueless.domain.repository.TokenRepository;
 import com.queueless.domain.repository.TokenSequenceRepository;
@@ -267,5 +268,21 @@ public class QueueEngineConcurrencyTest {
         TokenResponse completed = queueEngine.completeService(token.getId());
         assertEquals("COMPLETED", completed.getStatus());
         assertNotNull(completed.getCompletedAt());
+    }
+
+    @Test
+    @DisplayName("Sequence allocation starts above highest pre-existing sequence number")
+    public void testSequenceStartsAboveHighestExistingHistoricalNumber() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        TokenSequence existingSeq = TokenSequence.builder()
+                .serviceId(TEST_SERVICE_ID)
+                .sequenceDate(today)
+                .lastNumber(42)
+                .build();
+        sequenceRepository.saveAndFlush(existingSeq);
+
+        TokenResponse token = queueEngine.joinQueue(null, "customer_after_migration", TEST_SERVICE_ID, "STANDARD");
+        assertNotNull(token);
+        assertEquals("EME-043", token.getTokenNumber(), "New token must allocate 43, continuing above pre-existing max 42");
     }
 }

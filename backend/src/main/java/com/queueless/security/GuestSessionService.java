@@ -20,7 +20,7 @@ public class GuestSessionService {
     private static final String HMAC_ALGO = "HmacSHA256";
     private static final long DEFAULT_EXPIRY_MS = 24 * 60 * 60 * 1000L; // 24 hours
 
-    @Value("${queueless.jwt.secret:default-secret-key-for-queue-less-guest-sessions-2026}")
+    @Value("${queueless.guest.secret:${queueless.jwt.secret:default-secret-key-for-queue-less-guest-sessions-2026}}")
     private String secret;
 
     public record GuestSession(String guestId, String signedToken, boolean isNew) {}
@@ -39,6 +39,26 @@ public class GuestSessionService {
             log.warn("Invalid, expired, or forged guest token received. Issuing a new cryptographic session.");
         }
         return createNewGuestSession();
+    }
+
+    /**
+     * Resolves token candidate from either X-Guest-Token header, legacy header, or HTTP cookie.
+     */
+    public String extractTokenCandidate(String guestTokenHeader, String legacyHeader, jakarta.servlet.http.Cookie[] cookies) {
+        if (guestTokenHeader != null && !guestTokenHeader.isBlank()) {
+            return guestTokenHeader.trim();
+        }
+        if (legacyHeader != null && !legacyHeader.isBlank() && legacyHeader.contains(".")) {
+            return legacyHeader.trim();
+        }
+        if (cookies != null) {
+            for (jakarta.servlet.http.Cookie cookie : cookies) {
+                if ("queueless_guest_token".equals(cookie.getName()) && cookie.getValue() != null && !cookie.getValue().isBlank()) {
+                    return cookie.getValue().trim();
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -108,11 +128,8 @@ public class GuestSessionService {
 
     private boolean constantTimeEquals(String a, String b) {
         if (a == null || b == null) return false;
-        if (a.length() != b.length()) return false;
-        int result = 0;
-        for (int i = 0; i < a.length(); i++) {
-            result |= a.charAt(i) ^ b.charAt(i);
-        }
-        return result == 0;
+        byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);
+        byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);
+        return java.security.MessageDigest.isEqual(aBytes, bBytes);
     }
 }
