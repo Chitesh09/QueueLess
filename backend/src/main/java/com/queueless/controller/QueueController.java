@@ -45,14 +45,29 @@ public class QueueController {
     @Operation(summary = "Join a virtual queue for a service")
     public ResponseEntity<ApiResponse<TokenResponse>> joinQueue(@PathVariable Long serviceId,
                                                                  @RequestBody(required = false) JoinQueueRequest request,
-                                                                 @RequestHeader(value = "Authorization", required = false) String authHeader) {
-        Long userId = 4L; // Default demo customer if unauthenticated
+                                                                 @RequestHeader(value = "Authorization", required = false) String authHeader,
+                                                                 @RequestHeader(value = "X-Guest-ID", required = false) String guestIdHeader) {
+        Long userId = null;
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            userId = tokenProvider.getUserIdFromToken(authHeader.substring(7));
+            String token = authHeader.substring(7);
+            if (tokenProvider.validateToken(token)) {
+                userId = tokenProvider.getUserIdFromToken(token);
+            }
+        }
+
+        String guestSessionId = null;
+        if (userId == null) {
+            if (guestIdHeader != null && !guestIdHeader.isBlank()) {
+                guestSessionId = guestIdHeader.trim();
+            } else if (request != null && request.getGuestId() != null && !request.getGuestId().isBlank()) {
+                guestSessionId = request.getGuestId().trim();
+            } else {
+                guestSessionId = "guest_" + java.util.UUID.randomUUID().toString();
+            }
         }
 
         String priority = (request != null) ? request.getPriorityClass() : "STANDARD";
-        TokenResponse response = queueEngine.joinQueue(userId, serviceId, priority);
+        TokenResponse response = queueEngine.joinQueue(userId, guestSessionId, serviceId, priority);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Joined queue successfully"));
     }
 

@@ -28,6 +28,7 @@ public class QueueEngine {
     private final PriorityScheduler scheduler;
     private final QRService qrService;
     private final TokenService tokenService;
+    private final TokenSequenceGenerator sequenceGenerator;
     private final ApplicationEventPublisher eventPublisher;
 
     public QueueEngine(TokenRepository tokenRepository,
@@ -39,6 +40,7 @@ public class QueueEngine {
                        PriorityScheduler scheduler,
                        QRService qrService,
                        TokenService tokenService,
+                       TokenSequenceGenerator sequenceGenerator,
                        ApplicationEventPublisher eventPublisher) {
         this.tokenRepository = tokenRepository;
         this.serviceRepository = serviceRepository;
@@ -49,13 +51,20 @@ public class QueueEngine {
         this.scheduler = scheduler;
         this.qrService = qrService;
         this.tokenService = tokenService;
+        this.sequenceGenerator = sequenceGenerator;
         this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     @Auditable(action = "JOIN_QUEUE", entityType = "Token")
     public TokenResponse joinQueue(Long userId, Long serviceId, String priorityClass) {
-        validator.validateCanJoinQueue(userId, serviceId);
+        return joinQueue(userId, null, serviceId, priorityClass);
+    }
+
+    @Transactional
+    @Auditable(action = "JOIN_QUEUE", entityType = "Token")
+    public TokenResponse joinQueue(Long userId, String guestSessionId, Long serviceId, String priorityClass) {
+        validator.validateCanJoinQueue(userId, guestSessionId, serviceId);
 
         ServiceEntity service = serviceRepository.findById(serviceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Service", "id", serviceId));
@@ -66,14 +75,19 @@ public class QueueEngine {
             throw new BusinessException("Daily capacity reached for this service");
         }
 
+        java.time.LocalDate today = java.time.LocalDate.now();
+        int seqNumber = sequenceGenerator.nextSequenceNumber(serviceId, today);
+        String tokenNumber = sequenceGenerator.formatTokenNumber(service.getName(), seqNumber);
+
         String priority = (priorityClass != null && !priorityClass.isBlank()) ? priorityClass.toUpperCase() : "STANDARD";
-        String tokenNumber = String.format("%s-%03d", service.getName().substring(0, Math.min(3, service.getName().length())).toUpperCase(), currentWaitingCount + 1);
 
         Token token = Token.builder()
                 .organizationId(service.getOrganizationId())
                 .branchId(service.getBranchId())
                 .serviceId(serviceId)
                 .userId(userId)
+                .guestSessionId(guestSessionId)
+                .sequenceDate(today)
                 .tokenNumber(tokenNumber)
                 .status("WAITING")
                 .priorityClass(priority)

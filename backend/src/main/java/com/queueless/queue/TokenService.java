@@ -42,8 +42,11 @@ public class TokenService {
         String counterName = token.getCounterId() != null ?
                 counterRepository.findById(token.getCounterId()).map(Counter::getName).orElse(null) : null;
 
-        String userName = userRepository.findById(token.getUserId())
-                .map(User::getName).orElse("Customer");
+        String userName = "Guest Customer";
+        if (token.getUserId() != null) {
+            userName = userRepository.findById(token.getUserId())
+                    .map(User::getName).orElse("Customer");
+        }
 
         Integer etaMinutes = 0;
         if ("WAITING".equals(token.getStatus())) {

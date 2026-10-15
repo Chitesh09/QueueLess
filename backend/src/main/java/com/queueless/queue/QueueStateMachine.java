@@ -13,9 +13,9 @@ public class QueueStateMachine {
     private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
             "CREATED", Set.of("WAITING", "CANCELLED"),
             "WAITING", Set.of("CALLED", "CANCELLED", "EXPIRED"),
-            "CALLED", Set.of("CHECKED_IN", "SKIPPED", "EXPIRED"),
-            "SKIPPED", Set.of("CALLED", "EXPIRED"),
-            "CHECKED_IN", Set.of("IN_SERVICE", "COMPLETED"),
+            "CALLED", Set.of("CHECKED_IN", "IN_SERVICE", "COMPLETED", "SKIPPED", "EXPIRED"),
+            "SKIPPED", Set.of("CALLED", "CANCELLED", "EXPIRED"),
+            "CHECKED_IN", Set.of("IN_SERVICE", "COMPLETED", "SKIPPED", "EXPIRED"),
             "IN_SERVICE", Set.of("COMPLETED", "EXPIRED"),
             "COMPLETED", Set.of(),
             "CANCELLED", Set.of(),

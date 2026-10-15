@@ -9,4 +9,6 @@ public class JoinQueueRequest {
     private Long serviceId;
 
     private String priorityClass; // EMERGENCY, SENIOR, APPOINTMENT, STANDARD
+
+    private String guestId;
 }

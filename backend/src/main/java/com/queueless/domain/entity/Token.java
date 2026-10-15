@@ -27,8 +27,14 @@ public class Token {
     @Column(name = "service_id", nullable = false)
     private Long serviceId;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id")
     private Long userId;
+
+    @Column(name = "guest_session_id", length = 100)
+    private String guestSessionId;
+
+    @Column(name = "sequence_date", nullable = false)
+    private java.time.LocalDate sequenceDate;
 
     @Column(name = "counter_id")
     private Long counterId;
@@ -70,6 +76,7 @@ public class Token {
     @PrePersist
     protected void onCreate() {
         createdAt = Instant.now();
+        if (sequenceDate == null) sequenceDate = java.time.LocalDate.now();
         if (status == null) status = "WAITING";
         if (priorityClass == null) priorityClass = "STANDARD";
         if (version == null) version = 0L;

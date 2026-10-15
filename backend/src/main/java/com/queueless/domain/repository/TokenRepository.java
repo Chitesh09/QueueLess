@@ -23,6 +23,8 @@ public interface TokenRepository extends JpaRepository<Token, Long> {
 
     boolean existsByUserIdAndServiceIdAndStatusIn(Long userId, Long serviceId, List<String> activeStatuses);
 
+    boolean existsByGuestSessionIdAndServiceIdAndStatusIn(String guestSessionId, Long serviceId, List<String> activeStatuses);
+
     long countByServiceIdAndStatus(Long serviceId, String status);
 
     List<Token> findByStatusAndExpiresAtBefore(String status, Instant now);
