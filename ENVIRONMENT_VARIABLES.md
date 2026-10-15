@@ -1,30 +1,35 @@
-# 🔑 QueueLess — Environment Variables Reference
+# 🔑 QueueLess — Cloud Production Environment Variables Reference
 
-This document provides a complete reference for all environment variables used by the **QueueLess** backend and frontend.
-
----
-
-## ⚙️ Backend Environment Variables (Spring Boot 3)
-
-| Environment Variable | Description | Default Value | Example / Production Value |
-| :--- | :--- | :--- | :--- |
-| `SPRING_PROFILES_ACTIVE` | Active Spring profile | `dev` | `prod` |
-| `PORT` | Server HTTP port | `8080` | `8080` |
-| `SPRING_DATASOURCE_URL` | JDBC Database URL | `jdbc:mysql://localhost:3307/queueless_db...` | `jdbc:mysql://mysql:3306/queueless_db?useSSL=false` |
-| `SPRING_DATASOURCE_USERNAME` | Database username | `queueless_user` | `queueless_user` |
-| `SPRING_DATASOURCE_PASSWORD` | Database password | `queueless_password` | `<SECURE_PASSWORD>` |
-| `SPRING_REDIS_HOST` | Redis cache host | `localhost` | `redis` |
-| `SPRING_REDIS_PORT` | Redis cache port | `6379` | `6379` |
-| `SPRING_REDIS_PASSWORD` | Redis auth password | `` | `<REDIS_PASSWORD>` |
-| `JWT_SECRET` | Base64 HMAC secret key | `d1FhOFk5...` | `<64_CHAR_BASE64_SECRET>` |
-| `JWT_EXPIRATION` | Token validity in ms | `86400000` (24h) | `86400000` |
-| `HIKARI_MAX_POOL_SIZE` | Max DB pool connections | `20` | `20` |
+This document provides the complete reference for setting up **QueueLess** on **Render** (Backend), **Vercel** (Frontend), **TiDB Cloud** (MySQL 8), and **Upstash Redis**.
 
 ---
 
-## 🌐 Frontend Environment Variables (React + Vite)
+## ⚙️ Backend Environment Variables (Spring Boot 3 on Render)
 
-| Environment Variable | Description | Default Value | Example / Production Value |
-| :--- | :--- | :--- | :--- |
-| `VITE_API_BASE_URL` | Spring Boot REST API Base URL | `http://localhost:8080` | `https://queueless-backend.onrender.com` |
-| `VITE_WS_URL` | STOMP WebSocket URL | `http://localhost:8080/ws` | `wss://queueless-backend.onrender.com/ws` |
+Add these environment variables in your **Render Web Service Dashboard** under **Environment**:
+
+| Environment Variable | Description | Example / Production Value |
+| :--- | :--- | :--- |
+| `SPRING_PROFILES_ACTIVE` | Active Spring profile | `prod` |
+| `JAVA_VERSION` | Java JDK Version | `21` |
+| `PORT` | Web Service HTTP Port | `8080` |
+| `DB_URL` (or `SPRING_DATASOURCE_URL`) | TiDB Cloud JDBC Connection String | `jdbc:mysql://gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/queueless_db?useSSL=true&enabledTLSProtocols=TLSv1.2,TLSv1.3` |
+| `DB_USERNAME` (or `SPRING_DATASOURCE_USERNAME`) | TiDB Cloud Database User | `xxxxxx.root` |
+| `DB_PASSWORD` (or `SPRING_DATASOURCE_PASSWORD`) | TiDB Cloud Database Password | `<TIDB_CLOUD_PASSWORD>` |
+| `REDIS_HOST` (or `SPRING_REDIS_HOST`) | Upstash Redis Host Endpoint | `your-upstash-instance.upstash.io` |
+| `REDIS_PORT` (or `SPRING_REDIS_PORT`) | Upstash Redis TLS Port | `6379` |
+| `REDIS_PASSWORD` (or `SPRING_REDIS_PASSWORD`) | Upstash Redis Access Password | `<UPSTASH_REDIS_PASSWORD>` |
+| `SPRING_REDIS_SSL_ENABLED` | SSL/TLS for Upstash Redis | `true` |
+| `JWT_SECRET` | 64+ character Base64 Secret Key | `<YOUR_SECURE_JWT_SECRET>` |
+
+---
+
+## 🌐 Frontend Environment Variables (React + Vite on Vercel)
+
+Add these environment variables in your **Vercel Project Settings** under **Environment Variables**:
+
+| Environment Variable | Description | Example / Production Value |
+| :--- | :--- | :--- |
+| `VITE_API_BASE_URL` | Render Spring Boot REST API Base URL | `https://queueless-8u4a.onrender.com` |
+| `VITE_WS_URL` | STOMP WebSocket Endpoint | `wss://queueless-8u4a.onrender.com/ws` |
+| `VITE_DEFAULT_TENANT_ID` | Default Multi-Tenant ID | `1` |
