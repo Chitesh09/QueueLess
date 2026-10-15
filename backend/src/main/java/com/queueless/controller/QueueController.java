@@ -2,7 +2,6 @@ package com.queueless.controller;
 
 import com.queueless.common.response.ApiResponse;
 import com.queueless.domain.entity.Token;
-import com.queueless.domain.repository.TokenRepository;
 import com.queueless.dto.request.CheckInRequest;
 import com.queueless.dto.request.JoinQueueRequest;
 import com.queueless.dto.response.ETAResponse;
@@ -10,6 +9,7 @@ import com.queueless.dto.response.TokenResponse;
 import com.queueless.queue.ETAEngine;
 import com.queueless.queue.QueueEngine;
 import com.queueless.queue.TokenService;
+import com.queueless.security.GuestSessionService;
 import com.queueless.security.JwtTokenProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,18 +27,18 @@ public class QueueController {
     private final TokenService tokenService;
     private final ETAEngine etaEngine;
     private final JwtTokenProvider tokenProvider;
-    private final TokenRepository tokenRepository;
+    private final GuestSessionService guestSessionService;
 
     public QueueController(QueueEngine queueEngine,
                            TokenService tokenService,
                            ETAEngine etaEngine,
                            JwtTokenProvider tokenProvider,
-                           TokenRepository tokenRepository) {
+                           GuestSessionService guestSessionService) {
         this.queueEngine = queueEngine;
         this.tokenService = tokenService;
         this.etaEngine = etaEngine;
         this.tokenProvider = tokenProvider;
-        this.tokenRepository = tokenRepository;
+        this.guestSessionService = guestSessionService;
     }
 
     @PostMapping("/services/{serviceId}/tokens")
@@ -46,7 +46,8 @@ public class QueueController {
     public ResponseEntity<ApiResponse<TokenResponse>> joinQueue(@PathVariable Long serviceId,
                                                                  @RequestBody(required = false) JoinQueueRequest request,
                                                                  @RequestHeader(value = "Authorization", required = false) String authHeader,
-                                                                 @RequestHeader(value = "X-Guest-ID", required = false) String guestIdHeader) {
+                                                                 @RequestHeader(value = "X-Guest-Token", required = false) String guestTokenHeader,
+                                                                 @RequestHeader(value = "X-Guest-ID", required = false) String legacyGuestIdHeader) {
         Long userId = null;
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
@@ -56,19 +57,27 @@ public class QueueController {
         }
 
         String guestSessionId = null;
+        String issuedGuestToken = null;
+
         if (userId == null) {
-            if (guestIdHeader != null && !guestIdHeader.isBlank()) {
-                guestSessionId = guestIdHeader.trim();
-            } else if (request != null && request.getGuestId() != null && !request.getGuestId().isBlank()) {
-                guestSessionId = request.getGuestId().trim();
-            } else {
-                guestSessionId = "guest_" + java.util.UUID.randomUUID().toString();
-            }
+            // Cryptographically verify or generate signed guest session
+            String tokenCandidate = (guestTokenHeader != null && !guestTokenHeader.isBlank())
+                    ? guestTokenHeader
+                    : legacyGuestIdHeader;
+
+            GuestSessionService.GuestSession session = guestSessionService.resolveOrCreateGuestSession(tokenCandidate);
+            guestSessionId = session.guestId();
+            issuedGuestToken = session.signedToken();
         }
 
         String priority = (request != null) ? request.getPriorityClass() : "STANDARD";
-        TokenResponse response = queueEngine.joinQueue(userId, guestSessionId, serviceId, priority);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response, "Joined queue successfully"));
+        TokenResponse tokenResponse = queueEngine.joinQueue(userId, guestSessionId, serviceId, priority);
+
+        var responseBuilder = ResponseEntity.status(HttpStatus.CREATED);
+        if (issuedGuestToken != null) {
+            responseBuilder.header("X-Guest-Token", issuedGuestToken);
+        }
+        return responseBuilder.body(ApiResponse.success(tokenResponse, "Joined queue successfully"));
     }
 
     @GetMapping("/tokens/{tokenId}")

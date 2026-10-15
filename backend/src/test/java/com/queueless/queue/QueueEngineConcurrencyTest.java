@@ -87,28 +87,30 @@ public class QueueEngineConcurrencyTest {
             });
         }
 
-        startLatch.countDown();
-        boolean completed = doneLatch.await(15, TimeUnit.SECONDS);
-        executor.shutdown();
+        try {
+            startLatch.countDown();
+            boolean completed = doneLatch.await(15, TimeUnit.SECONDS);
+            assertTrue(completed, "All join threads should finish within timeout");
+            assertTrue(errors.isEmpty(), "Zero errors expected during concurrent joins, got: " + errors);
+            assertEquals(threadCount, createdTokens.size(), "All 20 tokens must be successfully created");
 
-        assertTrue(completed, "All join threads should finish within timeout");
-        assertTrue(errors.isEmpty(), "Zero errors expected during concurrent joins, got: " + errors);
-        assertEquals(threadCount, createdTokens.size(), "All 20 tokens must be successfully created");
+            // Verify token number uniqueness
+            Set<String> tokenNumbers = createdTokens.stream()
+                    .map(TokenResponse::getTokenNumber)
+                    .collect(Collectors.toSet());
+            assertEquals(threadCount, tokenNumbers.size(), "Every token number must be strictly unique");
 
-        // Verify token number uniqueness
-        Set<String> tokenNumbers = createdTokens.stream()
-                .map(TokenResponse::getTokenNumber)
-                .collect(Collectors.toSet());
-        assertEquals(threadCount, tokenNumbers.size(), "Every token number must be strictly unique");
+            // Verify monotonic numbering range from EME-001 to EME-020
+            List<Integer> sequenceNumbers = createdTokens.stream()
+                    .map(t -> Integer.parseInt(t.getTokenNumber().replace("EME-", "")))
+                    .sorted()
+                    .collect(Collectors.toList());
 
-        // Verify monotonic numbering range from EME-001 to EME-020
-        List<Integer> sequenceNumbers = createdTokens.stream()
-                .map(t -> Integer.parseInt(t.getTokenNumber().replace("EME-", "")))
-                .sorted()
-                .collect(Collectors.toList());
-
-        for (int i = 0; i < threadCount; i++) {
-            assertEquals(i + 1, sequenceNumbers.get(i), "Sequence numbers must be consecutive and monotonic");
+            for (int i = 0; i < threadCount; i++) {
+                assertEquals(i + 1, sequenceNumbers.get(i), "Sequence numbers must be consecutive and monotonic");
+            }
+        } finally {
+            executor.shutdownNow();
         }
     }
 
@@ -149,36 +151,90 @@ public class QueueEngineConcurrencyTest {
         List<TokenResponse> calledTokens = Collections.synchronizedList(new ArrayList<>());
         List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
 
-        // Counter 1 and Counter 2 both attempt to call next simultaneously
-        for (int i = 0; i < callers; i++) {
-            final Long counterId = (i % 2 == 0) ? 1L : 2L;
+        try {
+            // Counter 1 and Counter 2 both attempt to call next simultaneously
+            for (int i = 0; i < callers; i++) {
+                final Long counterId = (i % 2 == 0) ? 1L : 2L;
+                executor.submit(() -> {
+                    try {
+                        startLatch.await();
+                        TokenResponse token = queueEngine.callNextToken(counterId);
+                        if (token != null) {
+                            calledTokens.add(token);
+                        }
+                    } catch (Throwable t) {
+                        errors.add(t);
+                    } finally {
+                        doneLatch.countDown();
+                    }
+                });
+            }
+
+            startLatch.countDown();
+            doneLatch.await(10, TimeUnit.SECONDS);
+
+            assertTrue(errors.isEmpty(), "Zero errors expected during dispatch, got: " + errors);
+            assertFalse(calledTokens.isEmpty(), "Dispatches should have acquired tokens");
+
+            // Verify that every called token has a unique ID (no double-dispatch)
+            Set<Long> tokenIds = calledTokens.stream()
+                    .map(TokenResponse::getId)
+                    .collect(Collectors.toSet());
+            assertEquals(calledTokens.size(), tokenIds.size(), "No token may be assigned to more than one counter");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("Simultaneous dispatch of a single token allows exactly one counter to claim it")
+    public void testSimultaneousDispatchOfSingleWaitingToken() throws Exception {
+        // Only 1 token in the queue
+        TokenResponse singleToken = queueEngine.joinQueue(null, "lone_guest", TEST_SERVICE_ID, "STANDARD");
+        assertNotNull(singleToken);
+
+        int competingCounters = 2;
+        ExecutorService executor = Executors.newFixedThreadPool(competingCounters);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(competingCounters);
+
+        List<TokenResponse> claimed = Collections.synchronizedList(new ArrayList<>());
+        List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
+
+        try {
             executor.submit(() -> {
                 try {
                     startLatch.await();
-                    TokenResponse token = queueEngine.callNextToken(counterId);
-                    if (token != null) {
-                        calledTokens.add(token);
-                    }
+                    TokenResponse t = queueEngine.callNextToken(1L);
+                    if (t != null) claimed.add(t);
                 } catch (Throwable t) {
                     errors.add(t);
                 } finally {
                     doneLatch.countDown();
                 }
             });
+
+            executor.submit(() -> {
+                try {
+                    startLatch.await();
+                    TokenResponse t = queueEngine.callNextToken(2L);
+                    if (t != null) claimed.add(t);
+                } catch (Throwable t) {
+                    errors.add(t);
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+
+            startLatch.countDown();
+            doneLatch.await(10, TimeUnit.SECONDS);
+
+            assertTrue(errors.isEmpty(), "Zero errors expected during race for single token, got: " + errors);
+            assertEquals(1, claimed.size(), "Exactly one counter must succeed in claiming the single waiting token");
+            assertEquals(singleToken.getId(), claimed.get(0).getId());
+        } finally {
+            executor.shutdownNow();
         }
-
-        startLatch.countDown();
-        doneLatch.await(10, TimeUnit.SECONDS);
-        executor.shutdown();
-
-        assertTrue(errors.isEmpty(), "Zero errors expected during dispatch, got: " + errors);
-        assertFalse(calledTokens.isEmpty(), "Dispatches should have acquired tokens");
-
-        // Verify that every called token has a unique ID (no double-dispatch)
-        Set<Long> tokenIds = calledTokens.stream()
-                .map(TokenResponse::getId)
-                .collect(Collectors.toSet());
-        assertEquals(calledTokens.size(), tokenIds.size(), "No token may be assigned to more than one counter");
     }
 
     @Test
