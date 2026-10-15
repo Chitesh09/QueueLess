@@ -66,3 +66,13 @@ export const useCheckInMutation = (onSuccessCallback) => {
     },
   });
 };
+
+export const useDisplayBoardQuery = (branchId = 1) => {
+  return useQuery({
+    queryKey: ['displayBoard', branchId],
+    queryFn: () => queueService.fetchDisplayBoard(branchId),
+    enabled: !!branchId,
+    refetchInterval: 15000, // Background fallback polling every 15s in case WS drops
+  });
+};
+

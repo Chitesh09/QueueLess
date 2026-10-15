@@ -12,6 +12,10 @@ import com.queueless.queue.TokenService;
 import com.queueless.security.GuestRateLimiter;
 import com.queueless.security.GuestSessionService;
 import com.queueless.security.JwtTokenProvider;
+import com.queueless.domain.entity.Branch;
+import com.queueless.domain.repository.BranchRepository;
+import com.queueless.domain.repository.TokenRepository;
+import com.queueless.dto.response.DisplayBoardResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
@@ -21,6 +25,9 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -33,19 +40,25 @@ public class QueueController {
     private final JwtTokenProvider tokenProvider;
     private final GuestSessionService guestSessionService;
     private final GuestRateLimiter guestRateLimiter;
+    private final TokenRepository tokenRepository;
+    private final BranchRepository branchRepository;
 
     public QueueController(QueueEngine queueEngine,
                            TokenService tokenService,
                            ETAEngine etaEngine,
                            JwtTokenProvider tokenProvider,
                            GuestSessionService guestSessionService,
-                           GuestRateLimiter guestRateLimiter) {
+                           GuestRateLimiter guestRateLimiter,
+                           TokenRepository tokenRepository,
+                           BranchRepository branchRepository) {
         this.queueEngine = queueEngine;
         this.tokenService = tokenService;
         this.etaEngine = etaEngine;
         this.tokenProvider = tokenProvider;
         this.guestSessionService = guestSessionService;
         this.guestRateLimiter = guestRateLimiter;
+        this.tokenRepository = tokenRepository;
+        this.branchRepository = branchRepository;
     }
 
     @PostMapping("/services/{serviceId}/tokens")
@@ -126,5 +139,34 @@ public class QueueController {
                                                                @Valid @RequestBody CheckInRequest request) {
         TokenResponse response = queueEngine.checkInToken(tokenId, request.getQrSignature());
         return ResponseEntity.ok(ApiResponse.success(response, "Checked in successfully"));
+    }
+
+    @GetMapping("/branches/{branchId}/display")
+    @Operation(summary = "Get live display board snapshot for a branch")
+    public ResponseEntity<ApiResponse<DisplayBoardResponse>> getDisplayBoard(@PathVariable Long branchId) {
+        String branchName = branchRepository.findById(branchId)
+                .map(Branch::getName)
+                .orElse("Branch #" + branchId);
+
+        List<Token> called = tokenRepository.findByBranchIdAndStatusInOrderByCalledAtDesc(branchId, List.of("CALLED", "CHECKED_IN"));
+        List<TokenResponse> calledTokens = called.stream()
+                .limit(10)
+                .map(tokenService::mapToTokenResponse)
+                .collect(Collectors.toList());
+
+        List<Token> waiting = tokenRepository.findByBranchIdAndStatusOrderByCreatedAtAsc(branchId, "WAITING");
+        List<TokenResponse> waitingTokens = waiting.stream()
+                .limit(20)
+                .map(tokenService::mapToTokenResponse)
+                .collect(Collectors.toList());
+
+        DisplayBoardResponse response = DisplayBoardResponse.builder()
+                .branchId(branchId)
+                .branchName(branchName)
+                .calledTokens(calledTokens)
+                .waitingTokens(waitingTokens)
+                .build();
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

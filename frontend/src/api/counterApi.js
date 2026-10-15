@@ -30,4 +30,9 @@ export const counterApi = {
     const response = await axiosClient.post(`/api/v1/counters/${counterId}/resume`);
     return response.data;
   },
+
+  getCounterQueue: async (counterId) => {
+    const response = await axiosClient.get(`/api/v1/counters/${counterId}/queue`);
+    return response.data;
+  },
 };

@@ -6,6 +6,7 @@ public class QueueConstants {
 
     public static final String WS_TOPIC_QUEUE = "/topic/queue/";
     public static final String WS_TOPIC_TOKEN = "/topic/tokens/";
+    public static final String WS_TOPIC_BRANCH_QUEUE = "/topic/branch/";
     public static final String WS_USER_QUEUE = "/user/queue/token-updates";
 
     public static final String ROLE_SUPER_ADMIN = "SUPER_ADMIN";

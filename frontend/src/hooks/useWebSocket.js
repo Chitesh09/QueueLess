@@ -9,35 +9,37 @@ export const useWebSocket = (branchId = 1) => {
   useEffect(() => {
     const handleStatusChange = (status) => {
       setConnectionStatus(status);
-    };
-
-    const handleMessage = () => {
-      try {
-        queryClient.invalidateQueries({ queryKey: ['tokenStatus'] });
+      if (status === 'CONNECTED') {
+        // When reconnecting, catch up on any missed updates during network drop
+        queryClient.invalidateQueries({ queryKey: ['displayBoard'] });
         queryClient.invalidateQueries({ queryKey: ['counters'] });
         queryClient.invalidateQueries({ queryKey: ['services'] });
+        queryClient.invalidateQueries({ queryKey: ['tokenStatus'] });
+        queryClient.invalidateQueries({ queryKey: ['counterQueue'] });
+      }
+    };
+
+    const handleMessage = (data) => {
+      try {
+        queryClient.invalidateQueries({ queryKey: ['displayBoard'] });
+        queryClient.invalidateQueries({ queryKey: ['counterQueue'] });
+        queryClient.invalidateQueries({ queryKey: ['counters'] });
+        if (data?.token?.id) {
+          queryClient.invalidateQueries({ queryKey: ['tokenStatus', data.token.id] });
+        }
       } catch (e) {
         // ignore
       }
     };
 
-    try {
-      websocketService.addStatusListener(handleStatusChange);
-      websocketService.addMessageListener(handleMessage);
-      websocketService.connect(branchId, handleMessage);
-    } catch (e) {
-      console.warn('useWebSocket connection error:', e);
-    }
+    websocketService.addStatusListener(handleStatusChange);
+    websocketService.connect(branchId, handleMessage);
 
     return () => {
-      try {
-        websocketService.removeStatusListener(handleStatusChange);
-        websocketService.removeMessageListener(handleMessage);
-      } catch (e) {
-        // ignore
-      }
+      websocketService.removeStatusListener(handleStatusChange);
     };
   }, [branchId, queryClient]);
 
   return { connectionStatus, isConnected: connectionStatus === 'CONNECTED' };
 };
+

@@ -2,13 +2,22 @@ package com.queueless.controller;
 
 import com.queueless.common.response.ApiResponse;
 import com.queueless.domain.entity.Counter;
+import com.queueless.domain.entity.CounterServiceMapping;
+import com.queueless.domain.entity.Token;
 import com.queueless.domain.repository.CounterRepository;
+import com.queueless.domain.repository.CounterServiceMappingRepository;
+import com.queueless.domain.repository.TokenRepository;
 import com.queueless.dto.response.TokenResponse;
+import com.queueless.queue.QueueBroadcaster;
 import com.queueless.queue.QueueEngine;
+import com.queueless.queue.TokenService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/counters")
@@ -17,10 +26,42 @@ public class CounterController {
 
     private final QueueEngine queueEngine;
     private final CounterRepository counterRepository;
+    private final CounterServiceMappingRepository csmRepository;
+    private final TokenRepository tokenRepository;
+    private final TokenService tokenService;
+    private final QueueBroadcaster queueBroadcaster;
 
-    public CounterController(QueueEngine queueEngine, CounterRepository counterRepository) {
+    public CounterController(QueueEngine queueEngine,
+                             CounterRepository counterRepository,
+                             CounterServiceMappingRepository csmRepository,
+                             TokenRepository tokenRepository,
+                             TokenService tokenService,
+                             QueueBroadcaster queueBroadcaster) {
         this.queueEngine = queueEngine;
         this.counterRepository = counterRepository;
+        this.csmRepository = csmRepository;
+        this.tokenRepository = tokenRepository;
+        this.tokenService = tokenService;
+        this.queueBroadcaster = queueBroadcaster;
+    }
+
+    @GetMapping("/{counterId}/queue")
+    @Operation(summary = "Get list of waiting tokens assigned to this counter's services")
+    public ResponseEntity<ApiResponse<List<TokenResponse>>> getCounterQueue(@PathVariable Long counterId) {
+        List<Long> mappedServiceIds = csmRepository.findByCounterId(counterId).stream()
+                .map(CounterServiceMapping::getServiceId)
+                .collect(Collectors.toList());
+
+        if (mappedServiceIds.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.success(List.of()));
+        }
+
+        List<Token> waitingTokens = tokenRepository.findByServiceIdInAndStatusOrderByCreatedAtAsc(mappedServiceIds, "WAITING");
+        List<TokenResponse> responseList = waitingTokens.stream()
+                .map(tokenService::mapToTokenResponse)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(ApiResponse.success(responseList));
     }
 
     @PostMapping("/{counterId}/call-next")
@@ -55,6 +96,7 @@ public class CounterController {
         Counter counter = counterRepository.findById(counterId).orElseThrow();
         counter.setStatus("PAUSED");
         counterRepository.save(counter);
+        queueBroadcaster.broadcastCounterStatus(counter.getBranchId(), counterId, "PAUSED");
         return ResponseEntity.ok(ApiResponse.success("PAUSED", "Counter paused"));
     }
 
@@ -64,6 +106,7 @@ public class CounterController {
         Counter counter = counterRepository.findById(counterId).orElseThrow();
         counter.setStatus("ONLINE");
         counterRepository.save(counter);
+        queueBroadcaster.broadcastCounterStatus(counter.getBranchId(), counterId, "ONLINE");
         return ResponseEntity.ok(ApiResponse.success("ONLINE", "Counter resumed"));
     }
 }

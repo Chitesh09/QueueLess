@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useBranchServicesQuery,
   useJoinQueueMutation,
@@ -6,6 +7,7 @@ import {
   useCheckInMutation,
 } from '../hooks/useQueueHooks';
 import { queueService } from '../services/queueService';
+import { websocketService } from '../services/websocketService';
 import { ServiceCatalogCard } from '../components/queue/ServiceCatalogCard';
 import { PrioritySelector } from '../components/queue/PrioritySelector';
 import { LiveTicketCard } from '../components/queue/LiveTicketCard';
@@ -17,6 +19,7 @@ import { Users, Clock, Server, CheckCircle2, AlertCircle, RefreshCw } from 'luci
 import { API_BASE_URL } from '../constants/config';
 
 export const QueuePage = () => {
+  const queryClient = useQueryClient();
   const [selectedServiceId, setSelectedServiceId] = useState(1);
   const [priorityClass, setPriorityClass] = useState('STANDARD');
   const [activeTokenId, setActiveTokenId] = useState(() => queueService.getStoredTokenId());
@@ -25,6 +28,29 @@ export const QueuePage = () => {
   // TanStack Query Hooks
   const { data: services, isLoading: isServicesLoading, error: servicesError, refetch: refetchServices } = useBranchServicesQuery(1);
   const { data: activeToken } = useTokenStatusQuery(activeTokenId);
+
+  // Real-time live token subscription
+  useEffect(() => {
+    if (!activeTokenId) return;
+
+    const sub = websocketService.subscribeToToken(activeTokenId, (updatedToken) => {
+      if (updatedToken) {
+        queryClient.setQueryData(['tokenStatus', activeTokenId], updatedToken);
+        if (updatedToken.status === 'CALLED') {
+          try {
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+            audio.play().catch(() => {});
+          } catch (e) {
+            // ignore audio play restriction
+          }
+        }
+      }
+    });
+
+    return () => {
+      sub.unsubscribe();
+    };
+  }, [activeTokenId, queryClient]);
 
   const joinQueueMutation = useJoinQueueMutation((newToken) => {
     setActiveTokenId(newToken.id);

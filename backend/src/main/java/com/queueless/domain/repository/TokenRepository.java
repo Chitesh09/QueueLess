@@ -30,4 +30,10 @@ public interface TokenRepository extends JpaRepository<Token, Long> {
     List<Token> findByStatusAndExpiresAtBefore(String status, Instant now);
 
     List<Token> findByBranchIdAndCreatedAtAfter(Long branchId, Instant since);
+
+    List<Token> findByBranchIdAndStatusInOrderByCalledAtDesc(Long branchId, List<String> statuses);
+
+    List<Token> findByBranchIdAndStatusOrderByCreatedAtAsc(Long branchId, String status);
+
+    List<Token> findByServiceIdInAndStatusOrderByCreatedAtAsc(List<Long> serviceIds, String status);
 }

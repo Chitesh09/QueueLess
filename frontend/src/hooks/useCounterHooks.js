@@ -14,13 +14,15 @@ export const useCallNextMutation = (onSuccessCallback) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (counterId) => counterService.callNextToken(counterId),
-    onSuccess: (data) => {
+    onSuccess: (data, counterId) => {
       if (data) {
         toast.success(`Token ${data.tokenNumber} called!`);
       } else {
         toast('Queue is empty. No waiting customers.', { icon: 'ℹ️' });
       }
       queryClient.invalidateQueries({ queryKey: ['tokenStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['counterQueue', counterId] });
+      queryClient.invalidateQueries({ queryKey: ['displayBoard'] });
       if (onSuccessCallback) {
         onSuccessCallback(data);
       }
@@ -36,9 +38,11 @@ export const useCompleteServiceMutation = (onSuccessCallback) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ counterId, tokenId }) => counterService.completeService(counterId, tokenId),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       toast.success(`Service completed for token ${data.tokenNumber}`);
       queryClient.invalidateQueries({ queryKey: ['tokenStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['counterQueue', variables.counterId] });
+      queryClient.invalidateQueries({ queryKey: ['displayBoard'] });
       if (onSuccessCallback) {
         onSuccessCallback(data);
       }
@@ -54,9 +58,11 @@ export const useSkipTokenMutation = (onSuccessCallback) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ counterId, tokenId }) => counterService.skipToken(counterId, tokenId),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       toast.success(`Token ${data.tokenNumber} skipped.`);
       queryClient.invalidateQueries({ queryKey: ['tokenStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['counterQueue', variables.counterId] });
+      queryClient.invalidateQueries({ queryKey: ['displayBoard'] });
       if (onSuccessCallback) {
         onSuccessCallback(data);
       }
@@ -91,3 +97,13 @@ export const useResumeCounterMutation = (onSuccessCallback) => {
     },
   });
 };
+
+export const useCounterQueueQuery = (counterId) => {
+  return useQuery({
+    queryKey: ['counterQueue', counterId],
+    queryFn: () => counterService.fetchCounterQueue(counterId),
+    enabled: !!counterId,
+    refetchInterval: 10000,
+  });
+};
+

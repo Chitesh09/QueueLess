@@ -36,6 +36,11 @@ export const queueService = {
     throw new Error(res?.message || 'Check-in failed');
   },
 
+  fetchDisplayBoard: async (branchId = 1) => {
+    const res = await queueApi.getDisplayBoard(branchId);
+    return res?.data || { branchId, branchName: '', calledTokens: [], waitingTokens: [] };
+  },
+
   getStoredTokenId: () => {
     const saved = localStorage.getItem(ACTIVE_TOKEN_KEY);
     return saved ? Number(saved) : null;

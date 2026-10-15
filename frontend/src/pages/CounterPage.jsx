@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   useBranchCountersQuery,
+  useCounterQueueQuery,
   useCallNextMutation,
   useCompleteServiceMutation,
   useSkipTokenMutation,
@@ -9,6 +10,7 @@ import {
 } from '../hooks/useCounterHooks';
 import { useCounterKeyboardShortcuts } from '../hooks/useCounterKeyboardShortcuts';
 import { counterService } from '../services/counterService';
+import { websocketService } from '../services/websocketService';
 import { CounterSelectorCard } from '../components/counter/CounterSelectorCard';
 import { CurrentCustomerCard } from '../components/counter/CurrentCustomerCard';
 import { NextUpQueueList } from '../components/counter/NextUpQueueList';
@@ -25,6 +27,42 @@ export const CounterPage = () => {
 
   // TanStack Query Hooks
   const { data: counters } = useBranchCountersQuery(1);
+  const { data: counterQueue, refetch: refetchQueue } = useCounterQueueQuery(selectedCounterId);
+
+  // Sync counterStatus with backend state when counters load or counter changes
+  useEffect(() => {
+    if (counters && selectedCounterId) {
+      const active = counters.find((c) => c.id === selectedCounterId);
+      if (active && active.status) {
+        setCounterStatus(active.status);
+      }
+    }
+  }, [counters, selectedCounterId]);
+
+  // Live WebSocket event subscription for branch queue and counters
+  useEffect(() => {
+    const subQueue = websocketService.subscribeToBranchQueue(1, (event) => {
+      refetchQueue();
+      if (currentCustomer && event?.token?.id === currentCustomer.id) {
+        if (event.eventType === 'TOKEN_COMPLETED' || event.eventType === 'TOKEN_SKIPPED') {
+          setCurrentCustomer(null);
+        } else if (event.token) {
+          setCurrentCustomer(event.token);
+        }
+      }
+    });
+
+    const subCounters = websocketService.subscribeToCounters(1, (event) => {
+      if (event?.counterId === selectedCounterId && event?.counterStatus) {
+        setCounterStatus(event.counterStatus);
+      }
+    });
+
+    return () => {
+      subQueue.unsubscribe();
+      subCounters.unsubscribe();
+    };
+  }, [selectedCounterId, currentCustomer, refetchQueue]);
 
   const callNextMutation = useCallNextMutation((nextToken) => {
     setCurrentCustomer(nextToken);
@@ -144,7 +182,9 @@ export const CounterPage = () => {
             <span>Current Queue Length</span>
             <Users className="w-4 h-4 text-amber-400" />
           </div>
-          <div className="text-2xl font-black text-white font-mono">3 Waiting</div>
+          <div className="text-2xl font-black text-white font-mono">
+            {counterQueue ? `${counterQueue.length} Waiting` : '0 Waiting'}
+          </div>
           <p className="text-[11px] text-slate-400">Next-up in Dispatch</p>
         </Card>
 
@@ -197,7 +237,7 @@ export const CounterPage = () => {
 
         {/* Right Column: Live Next-Up Waiting Queue (1 col) */}
         <div>
-          <NextUpQueueList waitingList={null} />
+          <NextUpQueueList waitingList={counterQueue || []} />
         </div>
       </div>
 

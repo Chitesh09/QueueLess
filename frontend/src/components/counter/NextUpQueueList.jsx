@@ -3,14 +3,8 @@ import { Clock, Users } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 
-export const NextUpQueueList = ({ waitingList }) => {
-  const defaultList = [
-    { id: 101, tokenNumber: 'EME-001', serviceName: 'Emergency Triage & OPD', priorityClass: 'EMERGENCY', waitMinutes: 14 },
-    { id: 102, tokenNumber: 'EME-002', serviceName: 'Emergency Triage & OPD', priorityClass: 'SENIOR', waitMinutes: 9 },
-    { id: 103, tokenNumber: 'EME-003', serviceName: 'Emergency Triage & OPD', priorityClass: 'STANDARD', waitMinutes: 4 },
-  ];
-
-  const items = waitingList && waitingList.length > 0 ? waitingList : defaultList;
+export const NextUpQueueList = ({ waitingList = [] }) => {
+  const items = Array.isArray(waitingList) ? waitingList : [];
 
   return (
     <Card className="p-6 space-y-4 border-slate-800 bg-slate-900/60">

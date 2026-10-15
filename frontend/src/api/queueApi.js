@@ -30,4 +30,9 @@ export const queueApi = {
     });
     return response.data;
   },
+
+  getDisplayBoard: async (branchId = 1) => {
+    const response = await axiosClient.get(`/api/v1/branches/${branchId}/display`);
+    return response.data;
+  },
 };

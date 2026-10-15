@@ -42,6 +42,12 @@ export const counterService = {
     return res?.data || 'ONLINE';
   },
 
+  fetchCounterQueue: async (counterId) => {
+    if (!counterId) return [];
+    const res = await counterApi.getCounterQueue(counterId);
+    return res?.data || [];
+  },
+
   getStoredCounterId: () => {
     const saved = localStorage.getItem(ACTIVE_COUNTER_KEY);
     return saved ? Number(saved) : 1;
