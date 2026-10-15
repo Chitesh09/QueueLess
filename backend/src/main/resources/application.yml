@@ -44,11 +44,11 @@ server:
 
 queueless:
   jwt:
-    secret: ${JWT_SECRET:?Set JWT_SECRET environment variable}
+    secret: ${JWT_SECRET}
     expiration-ms: 86400000 # 24 hours
     refresh-expiration-ms: 604800000 # 7 days
   qr:
-    secret: ${QUEUELESS_QR_SECRET:?Set QUEUELESS_QR_SECRET environment variable}
+    secret: ${QUEUELESS_QR_SECRET}
   queue:
     max-starvation-threshold-sec: 600
     default-grace-period-min: 15
