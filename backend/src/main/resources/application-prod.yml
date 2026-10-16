@@ -44,9 +44,14 @@ spring:
 
 server:
   port: ${PORT:8080}
+  shutdown: graceful
   error:
     include-stacktrace: never
     include-message: always
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
 
 queueless:
   jwt:

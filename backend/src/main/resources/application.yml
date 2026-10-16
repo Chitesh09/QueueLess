@@ -40,6 +40,7 @@ spring:
 
 server:
   port: ${PORT:8080}
+  shutdown: graceful
   servlet:
     context-path: /
 
