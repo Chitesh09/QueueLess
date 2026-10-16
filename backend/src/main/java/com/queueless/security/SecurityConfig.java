@@ -3,6 +3,7 @@ package com.queueless.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -39,27 +40,50 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(new org.springframework.security.web.authentication.HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/**",
-                                "/api/v1/branches/**",
-                                "/api/v1/services/**",
-                                "/api/v1/tokens/**",
-                                "/api/v1/orgs/**",
-                                "/api/v1/organizations/**",
                                 "/ws/**",
                                 "/ws-queue/**",
-                                "/actuator/**",
+                                "/actuator/health",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
                         ).permitAll()
+                        // Public queue operations: joining queue, dynamic ETA calculation, service/dept catalog, waiting room display, QR check-in, tracking token
+                        .requestMatchers(HttpMethod.POST, "/api/v1/services/*/tokens").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/services/*/eta").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/branches/*/services").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/branches/*/departments").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/branches/*/display").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/tokens/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/tokens/*/check-in").permitAll()
+
+                        // Counter operator operations: OPERATOR, BRANCH_ADMIN, ORG_ADMIN, SUPER_ADMIN
+                        .requestMatchers("/api/v1/counters/**").hasAnyRole("OPERATOR", "BRANCH_ADMIN", "ORG_ADMIN", "SUPER_ADMIN")
+
+                        // Analytics reporting: BRANCH_ADMIN, ORG_ADMIN, SUPER_ADMIN
+                        .requestMatchers("/api/v1/analytics/**").hasAnyRole("BRANCH_ADMIN", "ORG_ADMIN", "SUPER_ADMIN")
+
+                        // Organization & branch administration
+                        .requestMatchers(HttpMethod.POST, "/api/v1/orgs", "/api/v1/organizations").hasRole("SUPER_ADMIN")
+                        .requestMatchers("/api/v1/orgs/**", "/api/v1/organizations/**").hasAnyRole("ORG_ADMIN", "SUPER_ADMIN", "BRANCH_ADMIN", "OPERATOR")
+
+                        // Branch counter management
+                        .requestMatchers(HttpMethod.POST, "/api/v1/branches/*/counters").hasAnyRole("BRANCH_ADMIN", "ORG_ADMIN", "SUPER_ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/branches/*/counters").hasAnyRole("OPERATOR", "BRANCH_ADMIN", "ORG_ADMIN", "SUPER_ADMIN")
+
+                        // Authenticated user settings & preferences
+                        .requestMatchers("/api/v1/users/**", "/api/v1/organization/preferences").authenticated()
                         .anyRequest().authenticated()
                 );
 
-        http.addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterAfter(tenantFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

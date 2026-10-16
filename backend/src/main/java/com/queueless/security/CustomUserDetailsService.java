@@ -34,13 +34,15 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .map(r -> new SimpleGrantedAuthority("ROLE_" + r.getRole()))
                 .collect(Collectors.toList());
 
-        if (authorities.isEmpty()) {
-            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
-        }
+        String primaryRole = roles.isEmpty() ? "USER" : roles.get(0).getRole();
+        Long orgId = roles.isEmpty() ? null : roles.get(0).getOrganizationId();
 
-        return new org.springframework.security.core.userdetails.User(
+        return new QueuelessUserPrincipal(
+                user.getId(),
+                orgId,
                 user.getEmail(),
                 user.getPasswordHash(),
+                primaryRole,
                 authorities
         );
     }

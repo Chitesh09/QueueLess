@@ -16,9 +16,9 @@ public class AuditLogService {
     }
 
     @Async
-    public void recordAudit(String action, String entityType, Long entityId, Long actorUserId, String metadataJson) {
+    public void recordAudit(Long organizationId, String action, String entityType, Long entityId, Long actorUserId, String metadataJson) {
         AuditLog log = AuditLog.builder()
-                .organizationId(TenantContext.getCurrentTenant())
+                .organizationId(organizationId != null ? organizationId : TenantContext.getCurrentTenant())
                 .actorUserId(actorUserId)
                 .action(action)
                 .entityType(entityType)
@@ -26,5 +26,10 @@ public class AuditLogService {
                 .metadataJson(metadataJson)
                 .build();
         auditLogRepository.save(log);
+    }
+
+    @Async
+    public void recordAudit(String action, String entityType, Long entityId, Long actorUserId, String metadataJson) {
+        recordAudit(TenantContext.getCurrentTenant(), action, entityType, entityId, actorUserId, metadataJson);
     }
 }

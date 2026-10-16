@@ -1,10 +1,16 @@
 package com.queueless.controller;
 
+import com.queueless.common.exception.ResourceNotFoundException;
 import com.queueless.common.response.ApiResponse;
+import com.queueless.domain.entity.Branch;
+import com.queueless.domain.repository.BranchRepository;
 import com.queueless.domain.repository.TokenRepository;
+import com.queueless.security.QueuelessUserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,14 +22,30 @@ import java.util.Map;
 public class AnalyticsController {
 
     private final TokenRepository tokenRepository;
+    private final BranchRepository branchRepository;
 
-    public AnalyticsController(TokenRepository tokenRepository) {
+    public AnalyticsController(TokenRepository tokenRepository, BranchRepository branchRepository) {
         this.tokenRepository = tokenRepository;
+        this.branchRepository = branchRepository;
+    }
+
+    private void validateBranchAccess(Long branchId, QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access to analytics");
+        }
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch", "id", branchId));
+
+        if (!principal.isSuperAdmin() && !branch.getOrganizationId().equals(principal.getOrganizationId())) {
+            throw new AccessDeniedException("Access denied: Branch does not belong to user's organization");
+        }
     }
 
     @GetMapping("/branches/{branchId}/overview")
     @Operation(summary = "Get branch queue analytics overview")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getBranchOverview(@PathVariable Long branchId) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getBranchOverview(@PathVariable Long branchId,
+                                                                              @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateBranchAccess(branchId, principal);
         Map<String, Object> stats = Map.of(
                 "totalTokensToday", 142,
                 "completedTokens", 118,
@@ -37,7 +59,9 @@ public class AnalyticsController {
 
     @GetMapping("/summary")
     @Operation(summary = "Get overall analytics summary")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getSummary(@RequestParam(defaultValue = "1") Long branchId) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getSummary(@RequestParam(defaultValue = "1") Long branchId,
+                                                                       @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateBranchAccess(branchId, principal);
         Map<String, Object> summary = Map.of(
                 "totalServed", 142,
                 "avgWaitMinutes", 11.8,
@@ -49,7 +73,9 @@ public class AnalyticsController {
 
     @GetMapping("/peak-hours")
     @Operation(summary = "Get hourly arrivals and served tokens distribution")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getPeakHours(@RequestParam(defaultValue = "1") Long branchId) {
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getPeakHours(@RequestParam(defaultValue = "1") Long branchId,
+                                                                               @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateBranchAccess(branchId, principal);
         List<Map<String, Object>> peakHours = List.of(
                 Map.of("hour", "08:00", "arrivals", 12, "served", 10),
                 Map.of("hour", "09:00", "arrivals", 25, "served", 22),
@@ -67,7 +93,9 @@ public class AnalyticsController {
 
     @GetMapping("/throughput")
     @Operation(summary = "Get department throughput and no-show statistics")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getThroughput(@RequestParam(defaultValue = "1") Long branchId) {
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getThroughput(@RequestParam(defaultValue = "1") Long branchId,
+                                                                                @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateBranchAccess(branchId, principal);
         List<Map<String, Object>> throughput = List.of(
                 Map.of("department", "Emergency Triage", "served", 48, "noShows", 2),
                 Map.of("department", "General Cardiology", "served", 36, "noShows", 3),
@@ -79,7 +107,9 @@ public class AnalyticsController {
 
     @GetMapping("/sla")
     @Operation(summary = "Get SLA compliance wait time distribution")
-    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getSlaCompliance(@RequestParam(defaultValue = "1") Long branchId) {
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getSlaCompliance(@RequestParam(defaultValue = "1") Long branchId,
+                                                                                   @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateBranchAccess(branchId, principal);
         List<Map<String, Object>> sla = List.of(
                 Map.of("name", "< 10m Wait (Optimal)", "value", 68, "color", "#10b981"),
                 Map.of("name", "10m - 15m Wait (Target)", "value", 24, "color", "#3b82f6"),

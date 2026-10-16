@@ -1,5 +1,6 @@
 package com.queueless.controller;
 
+import com.queueless.common.exception.ResourceNotFoundException;
 import com.queueless.common.response.ApiResponse;
 import com.queueless.domain.entity.Counter;
 import com.queueless.domain.entity.CounterServiceMapping;
@@ -13,10 +14,13 @@ import com.queueless.queue.QueueEngine;
 import com.queueless.queue.TokenService;
 import com.queueless.event.CounterPausedEvent;
 import com.queueless.event.CounterResumedEvent;
+import com.queueless.security.QueuelessUserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -52,9 +56,32 @@ public class CounterController {
         this.eventPublisher = eventPublisher;
     }
 
+    private Counter validateCounterAccess(Long counterId, QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access to counter operations");
+        }
+        Counter counter = counterRepository.findById(counterId)
+                .orElseThrow(() -> new ResourceNotFoundException("Counter", "id", counterId));
+
+        if (!principal.isSuperAdmin() && !counter.getOrganizationId().equals(principal.getOrganizationId())) {
+            throw new AccessDeniedException("Access denied: Counter does not belong to user's organization");
+        }
+        return counter;
+    }
+
+    private void validateTokenAccess(Long tokenId, QueuelessUserPrincipal principal) {
+        Token token = tokenService.getById(tokenId);
+        if (!principal.isSuperAdmin() && !token.getOrganizationId().equals(principal.getOrganizationId())) {
+            throw new AccessDeniedException("Access denied: Token does not belong to user's organization");
+        }
+    }
+
     @GetMapping("/{counterId}/queue")
     @Operation(summary = "Get list of waiting tokens assigned to this counter's services")
-    public ResponseEntity<ApiResponse<List<TokenResponse>>> getCounterQueue(@PathVariable Long counterId) {
+    public ResponseEntity<ApiResponse<List<TokenResponse>>> getCounterQueue(@PathVariable Long counterId,
+                                                                            @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateCounterAccess(counterId, principal);
+
         List<Long> mappedServiceIds = csmRepository.findByCounterId(counterId).stream()
                 .map(CounterServiceMapping::getServiceId)
                 .collect(Collectors.toList());
@@ -73,7 +100,10 @@ public class CounterController {
 
     @PostMapping("/{counterId}/call-next")
     @Operation(summary = "Call next waiting token based on Weighted Round-Robin fairness algorithm")
-    public ResponseEntity<ApiResponse<TokenResponse>> callNext(@PathVariable Long counterId) {
+    public ResponseEntity<ApiResponse<TokenResponse>> callNext(@PathVariable Long counterId,
+                                                                @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateCounterAccess(counterId, principal);
+
         TokenResponse token = queueEngine.callNextToken(counterId);
         if (token == null) {
             return ResponseEntity.ok(ApiResponse.success(null, "No waiting tokens in queue"));
@@ -84,7 +114,11 @@ public class CounterController {
     @PostMapping("/{counterId}/complete/{tokenId}")
     @Operation(summary = "Mark customer service as completed")
     public ResponseEntity<ApiResponse<TokenResponse>> completeService(@PathVariable Long counterId,
-                                                                       @PathVariable Long tokenId) {
+                                                                       @PathVariable Long tokenId,
+                                                                       @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateCounterAccess(counterId, principal);
+        validateTokenAccess(tokenId, principal);
+
         TokenResponse token = queueEngine.completeService(tokenId);
         return ResponseEntity.ok(ApiResponse.success(token, "Service marked as complete"));
     }
@@ -92,7 +126,11 @@ public class CounterController {
     @PostMapping("/{counterId}/skip/{tokenId}")
     @Operation(summary = "Skip absent customer token")
     public ResponseEntity<ApiResponse<TokenResponse>> skipToken(@PathVariable Long counterId,
-                                                                 @PathVariable Long tokenId) {
+                                                                 @PathVariable Long tokenId,
+                                                                 @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        validateCounterAccess(counterId, principal);
+        validateTokenAccess(tokenId, principal);
+
         TokenResponse token = queueEngine.skipToken(tokenId);
         return ResponseEntity.ok(ApiResponse.success(token, "Token skipped"));
     }
@@ -100,8 +138,9 @@ public class CounterController {
     @PostMapping("/{counterId}/pause")
     @Operation(summary = "Pause counter operations")
     @Transactional
-    public ResponseEntity<ApiResponse<String>> pauseCounter(@PathVariable Long counterId) {
-        Counter counter = counterRepository.findById(counterId).orElseThrow();
+    public ResponseEntity<ApiResponse<String>> pauseCounter(@PathVariable Long counterId,
+                                                            @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        Counter counter = validateCounterAccess(counterId, principal);
         counter.setStatus("PAUSED");
         counterRepository.save(counter);
         eventPublisher.publishEvent(new CounterPausedEvent(this, counterId));
@@ -111,8 +150,9 @@ public class CounterController {
     @PostMapping("/{counterId}/resume")
     @Operation(summary = "Resume counter operations")
     @Transactional
-    public ResponseEntity<ApiResponse<String>> resumeCounter(@PathVariable Long counterId) {
-        Counter counter = counterRepository.findById(counterId).orElseThrow();
+    public ResponseEntity<ApiResponse<String>> resumeCounter(@PathVariable Long counterId,
+                                                             @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        Counter counter = validateCounterAccess(counterId, principal);
         counter.setStatus("ONLINE");
         counterRepository.save(counter);
         eventPublisher.publishEvent(new CounterResumedEvent(this, counterId));

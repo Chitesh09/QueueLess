@@ -36,4 +36,9 @@ public interface TokenRepository extends JpaRepository<Token, Long> {
     List<Token> findByBranchIdAndStatusOrderByCreatedAtAsc(Long branchId, String status);
 
     List<Token> findByServiceIdInAndStatusOrderByCreatedAtAsc(List<Long> serviceIds, String status);
+
+    Optional<Token> findByIdAndOrganizationId(Long id, Long organizationId);
+
+    Optional<Token> findByIdAndUserId(Long id, Long userId);
 }
+

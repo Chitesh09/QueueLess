@@ -22,8 +22,10 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import com.queueless.security.QueuelessUserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -65,13 +67,16 @@ public class QueueController {
     @Operation(summary = "Join a virtual queue for a service")
     public ResponseEntity<ApiResponse<TokenResponse>> joinQueue(@PathVariable Long serviceId,
                                                                  @RequestBody(required = false) JoinQueueRequest request,
+                                                                 @AuthenticationPrincipal QueuelessUserPrincipal principal,
                                                                  @RequestHeader(value = "Authorization", required = false) String authHeader,
                                                                  @RequestHeader(value = "X-Guest-Token", required = false) String guestTokenHeader,
                                                                  @RequestHeader(value = "X-Guest-ID", required = false) String legacyGuestIdHeader,
                                                                  HttpServletRequest httpRequest,
                                                                  HttpServletResponse httpResponse) {
         Long userId = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+        if (principal != null) {
+            userId = principal.getUserId();
+        } else if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             if (tokenProvider.validateToken(token)) {
                 userId = tokenProvider.getUserIdFromToken(token);
@@ -119,9 +124,38 @@ public class QueueController {
 
     @GetMapping("/tokens/{tokenId}")
     @Operation(summary = "Get current token status & live queue position")
-    public ResponseEntity<ApiResponse<TokenResponse>> getTokenStatus(@PathVariable Long tokenId) {
+    public ResponseEntity<ApiResponse<TokenResponse>> getTokenStatus(@PathVariable Long tokenId,
+                                                                     @AuthenticationPrincipal QueuelessUserPrincipal principal,
+                                                                     @RequestHeader(value = "X-Guest-Token", required = false) String guestTokenHeader,
+                                                                     @RequestHeader(value = "X-Guest-ID", required = false) String legacyGuestIdHeader,
+                                                                     HttpServletRequest httpRequest) {
         Token token = tokenService.getById(tokenId);
-        TokenResponse response = tokenService.mapToTokenResponse(token);
+
+        boolean isAuthorizedOwner = false;
+
+        if (principal != null) {
+            if (principal.isSuperAdmin()) {
+                isAuthorizedOwner = true;
+            } else if (principal.isOperator() || principal.isBranchAdmin() || principal.isOrgAdmin()) {
+                isAuthorizedOwner = token.getOrganizationId() != null && token.getOrganizationId().equals(principal.getOrganizationId());
+            } else {
+                isAuthorizedOwner = token.getUserId() != null && token.getUserId().equals(principal.getUserId());
+            }
+        } else {
+            Cookie[] cookies = httpRequest != null ? httpRequest.getCookies() : null;
+            String tokenCandidate = guestSessionService.extractTokenCandidate(guestTokenHeader, legacyGuestIdHeader, cookies);
+            if (tokenCandidate != null) {
+                String validGuestId = guestSessionService.validateAndExtractGuestId(tokenCandidate);
+                if (validGuestId != null && validGuestId.equals(token.getGuestSessionId())) {
+                    isAuthorizedOwner = true;
+                }
+            }
+        }
+
+        TokenResponse response = isAuthorizedOwner ?
+                tokenService.mapToTokenResponse(token) :
+                tokenService.mapToPublicTokenResponse(token);
+
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

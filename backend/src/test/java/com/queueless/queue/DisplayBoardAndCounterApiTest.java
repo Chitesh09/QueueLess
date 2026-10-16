@@ -122,6 +122,9 @@ class DisplayBoardAndCounterApiTest {
     @Test
     @DisplayName("getCounterQueue returns waiting tokens mapped to counter services")
     void getCounterQueue_returnsMappedWaitingTokens() {
+        Counter counter = Counter.builder().id(2L).organizationId(1L).branchId(1L).status("ONLINE").name("Counter 2").build();
+        when(counterRepository.findById(2L)).thenReturn(Optional.of(counter));
+
         CounterServiceMapping csm1 = CounterServiceMapping.builder().counterId(2L).serviceId(5L).build();
         when(csmRepository.findByCounterId(2L)).thenReturn(List.of(csm1));
 
@@ -131,7 +134,12 @@ class DisplayBoardAndCounterApiTest {
         when(tokenRepository.findByServiceIdInAndStatusOrderByCreatedAtAsc(List.of(5L), "WAITING")).thenReturn(List.of(t1));
         when(tokenService.mapToTokenResponse(t1)).thenReturn(tr1);
 
-        ResponseEntity<ApiResponse<List<TokenResponse>>> response = counterController.getCounterQueue(2L);
+        com.queueless.security.QueuelessUserPrincipal principal = new com.queueless.security.QueuelessUserPrincipal(
+                1L, 1L, "operator@cityhospital.com", "OPERATOR",
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_OPERATOR"))
+        );
+
+        ResponseEntity<ApiResponse<List<TokenResponse>>> response = counterController.getCounterQueue(2L, principal);
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response.getBody()).isNotNull();
@@ -143,10 +151,15 @@ class DisplayBoardAndCounterApiTest {
     @Test
     @DisplayName("pauseCounter publishes CounterPausedEvent for transactional broadcast")
     void pauseCounter_updatesStatusAndPublishesEvent() {
-        Counter counter = Counter.builder().id(3L).branchId(1L).status("ONLINE").name("Counter 3").build();
+        Counter counter = Counter.builder().id(3L).organizationId(1L).branchId(1L).status("ONLINE").name("Counter 3").build();
         when(counterRepository.findById(3L)).thenReturn(Optional.of(counter));
 
-        ResponseEntity<ApiResponse<String>> response = counterController.pauseCounter(3L);
+        com.queueless.security.QueuelessUserPrincipal principal = new com.queueless.security.QueuelessUserPrincipal(
+                1L, 1L, "operator@cityhospital.com", "OPERATOR",
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_OPERATOR"))
+        );
+
+        ResponseEntity<ApiResponse<String>> response = counterController.pauseCounter(3L, principal);
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(counter.getStatus()).isEqualTo("PAUSED");
@@ -157,10 +170,15 @@ class DisplayBoardAndCounterApiTest {
     @Test
     @DisplayName("resumeCounter publishes CounterResumedEvent for transactional broadcast")
     void resumeCounter_updatesStatusAndPublishesEvent() {
-        Counter counter = Counter.builder().id(3L).branchId(1L).status("PAUSED").name("Counter 3").build();
+        Counter counter = Counter.builder().id(3L).organizationId(1L).branchId(1L).status("PAUSED").name("Counter 3").build();
         when(counterRepository.findById(3L)).thenReturn(Optional.of(counter));
 
-        ResponseEntity<ApiResponse<String>> response = counterController.resumeCounter(3L);
+        com.queueless.security.QueuelessUserPrincipal principal = new com.queueless.security.QueuelessUserPrincipal(
+                1L, 1L, "operator@cityhospital.com", "OPERATOR",
+                List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_OPERATOR"))
+        );
+
+        ResponseEntity<ApiResponse<String>> response = counterController.resumeCounter(3L, principal);
 
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(counter.getStatus()).isEqualTo("ONLINE");

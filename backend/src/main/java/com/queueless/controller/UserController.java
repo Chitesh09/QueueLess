@@ -1,13 +1,16 @@
 package com.queueless.controller;
 
+import com.queueless.common.exception.ResourceNotFoundException;
 import com.queueless.common.response.ApiResponse;
 import com.queueless.domain.entity.User;
 import com.queueless.domain.repository.UserRepository;
 import com.queueless.dto.response.AuthResponse;
-import com.queueless.security.JwtTokenProvider;
+import com.queueless.security.QueuelessUserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,43 +23,29 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider tokenProvider;
 
     public UserController(UserRepository userRepository,
-                          PasswordEncoder passwordEncoder,
-                          JwtTokenProvider tokenProvider) {
+                          PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.tokenProvider = tokenProvider;
     }
 
     @GetMapping("/users/me")
     @Operation(summary = "Get current authenticated user profile")
-    public ResponseEntity<ApiResponse<AuthResponse>> getCurrentUser(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        Long userId = 1L;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            userId = tokenProvider.getUserIdFromToken(authHeader.substring(7));
+    public ResponseEntity<ApiResponse<AuthResponse>> getCurrentUser(@AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
         }
 
-        User user = userRepository.findById(userId)
-                .orElseGet(() -> userRepository.findAll().stream().findFirst().orElse(null));
-
-        if (user == null) {
-            return ResponseEntity.ok(ApiResponse.success(AuthResponse.builder()
-                    .userId(1L)
-                    .email("operator@cityhospital.com")
-                    .name("Dr. Sarah Jenkins")
-                    .role("ADMIN")
-                    .organizationId(1L)
-                    .build()));
-        }
+        User user = userRepository.findById(principal.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", principal.getUserId()));
 
         AuthResponse response = AuthResponse.builder()
                 .userId(user.getId())
                 .email(user.getEmail())
                 .name(user.getName())
-                .role("ADMIN")
-                .organizationId(1L)
+                .role(principal.getRole())
+                .organizationId(principal.getOrganizationId())
                 .build();
 
         return ResponseEntity.ok(ApiResponse.success(response));
@@ -64,26 +53,29 @@ public class UserController {
 
     @PutMapping("/users/profile")
     @Operation(summary = "Update user profile information")
-    public ResponseEntity<ApiResponse<AuthResponse>> updateProfile(@RequestHeader(value = "Authorization", required = false) String authHeader,
+    public ResponseEntity<ApiResponse<AuthResponse>> updateProfile(@AuthenticationPrincipal QueuelessUserPrincipal principal,
                                                                    @RequestBody Map<String, String> body) {
-        Long userId = 1L;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            userId = tokenProvider.getUserIdFromToken(authHeader.substring(7));
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
         }
 
-        User user = userRepository.findById(userId).orElse(null);
-        if (user != null) {
-            if (body.containsKey("name")) user.setName(body.get("name"));
-            if (body.containsKey("email")) user.setEmail(body.get("email"));
-            userRepository.save(user);
+        User user = userRepository.findById(principal.getUserId())
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", principal.getUserId()));
+
+        if (body.containsKey("name") && body.get("name") != null && !body.get("name").isBlank()) {
+            user.setName(body.get("name").trim());
         }
+        if (body.containsKey("email") && body.get("email") != null && !body.get("email").isBlank()) {
+            user.setEmail(body.get("email").trim());
+        }
+        userRepository.save(user);
 
         AuthResponse response = AuthResponse.builder()
-                .userId(userId)
-                .name(body.getOrDefault("name", user != null ? user.getName() : "Dr. Sarah Jenkins"))
-                .email(body.getOrDefault("email", user != null ? user.getEmail() : "operator@cityhospital.com"))
-                .role("ADMIN")
-                .organizationId(1L)
+                .userId(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .role(principal.getRole())
+                .organizationId(principal.getOrganizationId())
                 .build();
 
         return ResponseEntity.ok(ApiResponse.success(response, "Profile updated successfully"));
@@ -91,16 +83,16 @@ public class UserController {
 
     @PostMapping("/users/change-password")
     @Operation(summary = "Change authenticated user password")
-    public ResponseEntity<ApiResponse<Boolean>> changePassword(@RequestHeader(value = "Authorization", required = false) String authHeader,
+    public ResponseEntity<ApiResponse<Boolean>> changePassword(@AuthenticationPrincipal QueuelessUserPrincipal principal,
                                                                @RequestBody Map<String, String> body) {
-        Long userId = 1L;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            userId = tokenProvider.getUserIdFromToken(authHeader.substring(7));
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
         }
 
         String newPassword = body.get("newPassword");
-        User user = userRepository.findById(userId).orElse(null);
-        if (user != null && newPassword != null && !newPassword.isBlank()) {
+        if (newPassword != null && !newPassword.isBlank()) {
+            User user = userRepository.findById(principal.getUserId())
+                    .orElseThrow(() -> new ResourceNotFoundException("User", "id", principal.getUserId()));
             user.setPasswordHash(passwordEncoder.encode(newPassword));
             userRepository.save(user);
         }
@@ -110,7 +102,11 @@ public class UserController {
 
     @GetMapping("/organization/preferences")
     @Operation(summary = "Get organization queue system preferences")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getPreferences() {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getPreferences(@AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null || (!principal.isOrgAdmin() && !principal.isSuperAdmin())) {
+            throw new AccessDeniedException("Access denied: ORG_ADMIN or SUPER_ADMIN required");
+        }
+
         Map<String, Object> prefs = Map.of(
                 "enableSmsNotifications", true,
                 "enableEmailAlerts", true,
@@ -123,7 +119,12 @@ public class UserController {
 
     @PutMapping("/organization/preferences")
     @Operation(summary = "Update organization queue system preferences")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> updatePreferences(@RequestBody Map<String, Object> prefs) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> updatePreferences(@AuthenticationPrincipal QueuelessUserPrincipal principal,
+                                                                              @RequestBody Map<String, Object> prefs) {
+        if (principal == null || (!principal.isOrgAdmin() && !principal.isSuperAdmin())) {
+            throw new AccessDeniedException("Access denied: ORG_ADMIN or SUPER_ADMIN required");
+        }
+
         return ResponseEntity.ok(ApiResponse.success(prefs, "Preferences updated successfully"));
     }
 }

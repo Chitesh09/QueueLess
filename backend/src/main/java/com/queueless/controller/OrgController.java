@@ -1,5 +1,6 @@
 package com.queueless.controller;
 
+import com.queueless.common.exception.ResourceNotFoundException;
 import com.queueless.common.response.ApiResponse;
 import com.queueless.domain.entity.Branch;
 import com.queueless.domain.entity.Counter;
@@ -9,10 +10,13 @@ import com.queueless.domain.repository.BranchRepository;
 import com.queueless.domain.repository.CounterRepository;
 import com.queueless.domain.repository.OrganizationRepository;
 import com.queueless.domain.repository.ServiceRepository;
+import com.queueless.security.QueuelessUserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -40,26 +44,43 @@ public class OrgController {
 
     @GetMapping({"/orgs", "/organizations"})
     @Operation(summary = "List all registered organizations (tenants)")
-    public ResponseEntity<ApiResponse<List<Organization>>> getOrganizations() {
-        return ResponseEntity.ok(ApiResponse.success(orgRepository.findAll()));
+    public ResponseEntity<ApiResponse<List<Organization>>> getOrganizations(@AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access to organizations");
+        }
+        if (principal.isSuperAdmin()) {
+            return ResponseEntity.ok(ApiResponse.success(orgRepository.findAll()));
+        }
+        if (principal.getOrganizationId() != null) {
+            return orgRepository.findById(principal.getOrganizationId())
+                    .map(org -> ResponseEntity.ok(ApiResponse.success(List.of(org))))
+                    .orElse(ResponseEntity.ok(ApiResponse.success(List.of())));
+        }
+        throw new AccessDeniedException("Access denied to view organizations");
     }
 
     @GetMapping({"/orgs/{id}", "/organizations/{id}"})
     @Operation(summary = "Get organization by ID")
-    public ResponseEntity<ApiResponse<Organization>> getOrganization(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<Organization>> getOrganization(@PathVariable Long id,
+                                                                     @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
+        }
+        if (!principal.isSuperAdmin() && !id.equals(principal.getOrganizationId())) {
+            throw new AccessDeniedException("Access denied to organization " + id);
+        }
         Organization org = orgRepository.findById(id)
-                .orElse(Organization.builder()
-                        .id(id)
-                        .name("City Health System")
-                        .planTier("PRO")
-                        .status("ACTIVE")
-                        .build());
+                .orElseThrow(() -> new ResourceNotFoundException("Organization", "id", id));
         return ResponseEntity.ok(ApiResponse.success(org));
     }
 
     @PostMapping({"/orgs", "/organizations"})
     @Operation(summary = "Create a new organization")
-    public ResponseEntity<ApiResponse<Organization>> createOrganization(@RequestBody Organization org) {
+    public ResponseEntity<ApiResponse<Organization>> createOrganization(@RequestBody Organization org,
+                                                                        @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null || !principal.isSuperAdmin()) {
+            throw new AccessDeniedException("Only SUPER_ADMIN can create new organizations");
+        }
         if (org.getPlanTier() == null) {
             org.setPlanTier("PRO");
         }
@@ -72,14 +93,32 @@ public class OrgController {
 
     @GetMapping({"/orgs/{orgId}/branches", "/organizations/{orgId}/branches"})
     @Operation(summary = "List branches under an organization")
-    public ResponseEntity<ApiResponse<List<Branch>>> getBranches(@PathVariable Long orgId) {
+    public ResponseEntity<ApiResponse<List<Branch>>> getBranches(@PathVariable Long orgId,
+                                                                 @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
+        }
+        if (!principal.isSuperAdmin() && !orgId.equals(principal.getOrganizationId())) {
+            throw new AccessDeniedException("Access denied to branches for organization " + orgId);
+        }
         List<Branch> branches = branchRepository.findByOrganizationId(orgId);
         return ResponseEntity.ok(ApiResponse.success(branches));
     }
 
     @PostMapping({"/orgs/{orgId}/branches", "/organizations/{orgId}/branches"})
     @Operation(summary = "Create a new branch facility under an organization")
-    public ResponseEntity<ApiResponse<Branch>> createBranch(@PathVariable Long orgId, @RequestBody Branch branch) {
+    public ResponseEntity<ApiResponse<Branch>> createBranch(@PathVariable Long orgId,
+                                                            @RequestBody Branch branch,
+                                                            @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
+        }
+        if (!principal.isSuperAdmin() && (!principal.isOrgAdmin() || !orgId.equals(principal.getOrganizationId()))) {
+            throw new AccessDeniedException("Access denied to create branch for organization " + orgId);
+        }
+        orgRepository.findById(orgId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization", "id", orgId));
+
         branch.setOrganizationId(orgId);
         Branch saved = branchRepository.save(branch);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(saved, "Branch created"));
@@ -107,14 +146,38 @@ public class OrgController {
 
     @GetMapping("/branches/{branchId}/counters")
     @Operation(summary = "List counters operating at a branch")
-    public ResponseEntity<ApiResponse<List<Counter>>> getCounters(@PathVariable Long branchId) {
+    public ResponseEntity<ApiResponse<List<Counter>>> getCounters(@PathVariable Long branchId,
+                                                                  @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
+        }
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch", "id", branchId));
+
+        if (!principal.isSuperAdmin() && !branch.getOrganizationId().equals(principal.getOrganizationId())) {
+            throw new AccessDeniedException("Access denied to counters for branch in another organization");
+        }
+
         return ResponseEntity.ok(ApiResponse.success(counterRepository.findByBranchId(branchId)));
     }
 
     @PostMapping("/branches/{branchId}/counters")
     @Operation(summary = "Create a new counter station at a branch")
-    public ResponseEntity<ApiResponse<Counter>> createCounter(@PathVariable Long branchId, @RequestBody Counter counter) {
+    public ResponseEntity<ApiResponse<Counter>> createCounter(@PathVariable Long branchId,
+                                                              @RequestBody Counter counter,
+                                                              @AuthenticationPrincipal QueuelessUserPrincipal principal) {
+        if (principal == null) {
+            throw new AccessDeniedException("Unauthenticated access");
+        }
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch", "id", branchId));
+
+        if (!principal.isSuperAdmin() && (!principal.isBranchAdmin() || !branch.getOrganizationId().equals(principal.getOrganizationId()))) {
+            throw new AccessDeniedException("Access denied to create counter for branch in another organization");
+        }
+
         counter.setBranchId(branchId);
+        counter.setOrganizationId(branch.getOrganizationId());
         if (counter.getStatus() == null) {
             counter.setStatus("ONLINE");
         }
