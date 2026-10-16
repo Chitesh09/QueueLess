@@ -63,7 +63,7 @@ public class CounterController {
         Counter counter = counterRepository.findById(counterId)
                 .orElseThrow(() -> new ResourceNotFoundException("Counter", "id", counterId));
 
-        if (!principal.isSuperAdmin() && !counter.getOrganizationId().equals(principal.getOrganizationId())) {
+        if (!com.queueless.security.TenantContext.isAuthorizedForTenant(counter.getOrganizationId(), principal)) {
             throw new AccessDeniedException("Access denied: Counter does not belong to user's organization");
         }
         return counter;
@@ -71,7 +71,7 @@ public class CounterController {
 
     private void validateTokenAccess(Long tokenId, QueuelessUserPrincipal principal) {
         Token token = tokenService.getById(tokenId);
-        if (!principal.isSuperAdmin() && !token.getOrganizationId().equals(principal.getOrganizationId())) {
+        if (!com.queueless.security.TenantContext.isAuthorizedForTenant(token.getOrganizationId(), principal)) {
             throw new AccessDeniedException("Access denied: Token does not belong to user's organization");
         }
     }

@@ -11,6 +11,7 @@ import com.queueless.domain.repository.CounterRepository;
 import com.queueless.domain.repository.OrganizationRepository;
 import com.queueless.domain.repository.ServiceRepository;
 import com.queueless.security.QueuelessUserPrincipal;
+import com.queueless.security.TenantContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,12 @@ public class OrgController {
             throw new AccessDeniedException("Unauthenticated access to organizations");
         }
         if (principal.isSuperAdmin()) {
+            Long scopedTenant = TenantContext.getCurrentTenant();
+            if (scopedTenant != null) {
+                return orgRepository.findById(scopedTenant)
+                        .map(org -> ResponseEntity.ok(ApiResponse.success(List.of(org))))
+                        .orElse(ResponseEntity.ok(ApiResponse.success(List.of())));
+            }
             return ResponseEntity.ok(ApiResponse.success(orgRepository.findAll()));
         }
         if (principal.getOrganizationId() != null) {
@@ -66,7 +73,7 @@ public class OrgController {
         if (principal == null) {
             throw new AccessDeniedException("Unauthenticated access");
         }
-        if (!principal.isSuperAdmin() && !id.equals(principal.getOrganizationId())) {
+        if (!TenantContext.isAuthorizedForTenant(id, principal)) {
             throw new AccessDeniedException("Access denied to organization " + id);
         }
         Organization org = orgRepository.findById(id)
@@ -98,7 +105,7 @@ public class OrgController {
         if (principal == null) {
             throw new AccessDeniedException("Unauthenticated access");
         }
-        if (!principal.isSuperAdmin() && !orgId.equals(principal.getOrganizationId())) {
+        if (!TenantContext.isAuthorizedForTenant(orgId, principal)) {
             throw new AccessDeniedException("Access denied to branches for organization " + orgId);
         }
         List<Branch> branches = branchRepository.findByOrganizationId(orgId);
@@ -113,7 +120,7 @@ public class OrgController {
         if (principal == null) {
             throw new AccessDeniedException("Unauthenticated access");
         }
-        if (!principal.isSuperAdmin() && (!principal.isOrgAdmin() || !orgId.equals(principal.getOrganizationId()))) {
+        if (!TenantContext.isAuthorizedForTenant(orgId, principal) || (!principal.isSuperAdmin() && !principal.isOrgAdmin())) {
             throw new AccessDeniedException("Access denied to create branch for organization " + orgId);
         }
         orgRepository.findById(orgId)
@@ -154,7 +161,7 @@ public class OrgController {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch", "id", branchId));
 
-        if (!principal.isSuperAdmin() && !branch.getOrganizationId().equals(principal.getOrganizationId())) {
+        if (!TenantContext.isAuthorizedForTenant(branch.getOrganizationId(), principal)) {
             throw new AccessDeniedException("Access denied to counters for branch in another organization");
         }
 
@@ -172,7 +179,7 @@ public class OrgController {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch", "id", branchId));
 
-        if (!principal.isSuperAdmin() && (!principal.isBranchAdmin() || !branch.getOrganizationId().equals(principal.getOrganizationId()))) {
+        if (!TenantContext.isAuthorizedForTenant(branch.getOrganizationId(), principal) || (!principal.isSuperAdmin() && !principal.isBranchAdmin())) {
             throw new AccessDeniedException("Access denied to create counter for branch in another organization");
         }
 

@@ -3,6 +3,9 @@ package com.queueless.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.queueless.common.constants.QueueConstants;
 import com.queueless.domain.entity.Counter;
+import com.queueless.audit.service.AuditLogService;
+import com.queueless.domain.entity.AuditLog;
+import com.queueless.domain.repository.AuditLogRepository;
 import com.queueless.domain.repository.CounterRepository;
 import com.queueless.domain.repository.TokenRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +42,12 @@ public class TenantIsolationAndRbacSecurityTest {
 
     @Autowired
     private TokenRepository tokenRepository;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private AuditLogService auditLogService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -77,6 +87,8 @@ public class TenantIsolationAndRbacSecurityTest {
             c.setStatus("ONLINE");
             counterRepository.save(c);
         });
+
+        tokenRepository.deleteAll();
     }
 
     // =========================================================================
@@ -456,6 +468,186 @@ public class TenantIsolationAndRbacSecurityTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.enableSmsNotifications").value(true));
+        }
+    }
+
+    // =========================================================================
+    // 6. SUPER-ADMIN TENANT SCOPING
+    // =========================================================================
+    @Nested
+    @DisplayName("Super-Admin Tenant Scoping")
+    class SuperAdminScoping {
+
+        @Test
+        @DisplayName("SUPER_ADMIN scoped to Org 2 with X-Tenant-ID: 2 can access Org 2 but is denied Org 1 (returns 403)")
+        void superAdmin_withScopedTenantHeader_restrictedToTargetTenant() throws Exception {
+            // Can access Org 2
+            mockMvc.perform(get("/api/v1/organizations/2")
+                            .header("Authorization", "Bearer " + superAdminToken)
+                            .header(QueueConstants.HEADER_TENANT_ID, "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.id").value(2));
+
+            // Denied Org 1
+            mockMvc.perform(get("/api/v1/organizations/1")
+                            .header("Authorization", "Bearer " + superAdminToken)
+                            .header(QueueConstants.HEADER_TENANT_ID, "2"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("SUPER_ADMIN with X-Tenant-ID: 2 gets only Org 2 when listing organizations")
+        void superAdmin_withScopedTenantHeader_listsOnlyTargetOrg() throws Exception {
+            mockMvc.perform(get("/api/v1/organizations")
+                            .header("Authorization", "Bearer " + superAdminToken)
+                            .header(QueueConstants.HEADER_TENANT_ID, "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(1))
+                    .andExpect(jsonPath("$.data[0].id").value(2));
+        }
+
+        @Test
+        @DisplayName("SUPER_ADMIN without X-Tenant-ID has global unscoped access across all organizations")
+        void superAdmin_withoutTenantHeader_hasGlobalAccess() throws Exception {
+            mockMvc.perform(get("/api/v1/organizations")
+                            .header("Authorization", "Bearer " + superAdminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)));
+
+            mockMvc.perform(get("/api/v1/organizations/1")
+                            .header("Authorization", "Bearer " + superAdminToken))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/api/v1/organizations/2")
+                            .header("Authorization", "Bearer " + superAdminToken))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("SUPER_ADMIN with malformed X-Tenant-ID header defaults safely to global scope without 500 error")
+        void superAdmin_withMalformedTenantHeader_handlesSafely() throws Exception {
+            mockMvc.perform(get("/api/v1/organizations")
+                            .header("Authorization", "Bearer " + superAdminToken)
+                            .header(QueueConstants.HEADER_TENANT_ID, "malformed_abc"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data").isArray());
+        }
+
+        @Test
+        @DisplayName("SUPER_ADMIN with non-existent X-Tenant-ID returns empty list without leaking cross-tenant data")
+        void superAdmin_withNonExistentTenantHeader_returnsEmptyList() throws Exception {
+            mockMvc.perform(get("/api/v1/organizations")
+                            .header("Authorization", "Bearer " + superAdminToken)
+                            .header(QueueConstants.HEADER_TENANT_ID, "99999"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(0));
+        }
+    }
+
+    // =========================================================================
+    // 7. TOKEN PRIVACY & SANITIZATION
+    // =========================================================================
+    @Nested
+    @DisplayName("Token Privacy & Sanitization")
+    class TokenPrivacyAndSanitization {
+
+        @Test
+        @DisplayName("Token owner retrieving token receives full details including qrSignature and userId")
+        void owner_retrievingToken_receivesFullDetailsWithQrSignature() throws Exception {
+            // User 4 joins queue for Service 1
+            String responseBody = mockMvc.perform(post("/api/v1/services/1/tokens")
+                            .header("Authorization", "Bearer " + org1CustomerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"priorityClass\":\"STANDARD\"}"))
+                    .andExpect(status().isCreated())
+                    .andReturn().getResponse().getContentAsString();
+
+            long tokenId = objectMapper.readTree(responseBody).path("data").path("id").asLong();
+
+            // Owner retrieves token
+            mockMvc.perform(get("/api/v1/tokens/" + tokenId)
+                            .header("Authorization", "Bearer " + org1CustomerToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.id").value(tokenId))
+                    .andExpect(jsonPath("$.data.userId").value(4))
+                    .andExpect(jsonPath("$.data.qrSignature").isNotEmpty());
+        }
+
+        @Test
+        @DisplayName("Unrelated user retrieving token receives sanitized response with qrSignature and userId suppressed")
+        void unrelatedUser_retrievingToken_receivesSanitizedResponse() throws Exception {
+            // User 4 joins queue for Service 1
+            String responseBody = mockMvc.perform(post("/api/v1/services/1/tokens")
+                            .header("Authorization", "Bearer " + org1CustomerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"priorityClass\":\"STANDARD\"}"))
+                    .andExpect(status().isCreated())
+                    .andReturn().getResponse().getContentAsString();
+
+            long tokenId = objectMapper.readTree(responseBody).path("data").path("id").asLong();
+
+            // Org 2 user retrieves User 4's token
+            mockMvc.perform(get("/api/v1/tokens/" + tokenId)
+                            .header("Authorization", "Bearer " + org2AdminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.id").value(tokenId))
+                    .andExpect(jsonPath("$.data.userId").isEmpty())
+                    .andExpect(jsonPath("$.data.userName").isEmpty())
+                    .andExpect(jsonPath("$.data.qrSignature").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Anonymous caller without matching guest session receives sanitized response with qrSignature suppressed")
+        void anonymousCaller_withoutGuestSession_receivesSanitizedResponse() throws Exception {
+            // User 4 joins queue for Service 1
+            String responseBody = mockMvc.perform(post("/api/v1/services/1/tokens")
+                            .header("Authorization", "Bearer " + org1CustomerToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"priorityClass\":\"STANDARD\"}"))
+                    .andExpect(status().isCreated())
+                    .andReturn().getResponse().getContentAsString();
+
+            long tokenId = objectMapper.readTree(responseBody).path("data").path("id").asLong();
+
+            // Anonymous caller retrieves token
+            mockMvc.perform(get("/api/v1/tokens/" + tokenId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.id").value(tokenId))
+                    .andExpect(jsonPath("$.data.userId").isEmpty())
+                    .andExpect(jsonPath("$.data.userName").isEmpty())
+                    .andExpect(jsonPath("$.data.qrSignature").isEmpty());
+        }
+    }
+
+    // =========================================================================
+    // 8. ASYNCHRONOUS AUDIT LOGGING CONTEXT PRESERVATION
+    // =========================================================================
+    @Nested
+    @DisplayName("Asynchronous Audit Logging Context Preservation")
+    class AsynchronousAuditLogging {
+
+        @Test
+        @DisplayName("Audit logging preserves organizationId and actorUserId across asynchronous invocation")
+        void auditLogging_preservesOrganizationAndActor() throws Exception {
+            // Directly invoke audit log service
+            auditLogService.recordAudit(1L, "SECURITY_TEST_ACTION", "Organization", 1L, 2L, "{\"detail\":\"audit-security-gate\"}");
+
+            // Allow async thread execution
+            Thread.sleep(200);
+
+            List<AuditLog> logs = auditLogRepository.findByOrganizationIdOrderByCreatedAtDesc(1L);
+            assertThat(logs).isNotEmpty();
+
+            AuditLog latestLog = logs.get(0);
+            assertThat(latestLog.getOrganizationId()).isEqualTo(1L);
+            assertThat(latestLog.getAction()).isEqualTo("SECURITY_TEST_ACTION");
+            assertThat(latestLog.getActorUserId()).isEqualTo(2L);
+            assertThat(latestLog.getEntityType()).isEqualTo("Organization");
+
+            // Verify Org 2 has not received Org 1's audit entry
+            List<AuditLog> org2Logs = auditLogRepository.findByOrganizationIdOrderByCreatedAtDesc(2L);
+            boolean org2ContainsLog = org2Logs.stream().anyMatch(l -> "SECURITY_TEST_ACTION".equals(l.getAction()));
+            assertThat(org2ContainsLog).isFalse();
         }
     }
 }

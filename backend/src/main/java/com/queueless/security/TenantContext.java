@@ -15,4 +15,18 @@ public class TenantContext {
     public static void clear() {
         CURRENT_TENANT.remove();
     }
+
+    public static boolean isAuthorizedForTenant(Long targetOrgId, QueuelessUserPrincipal principal) {
+        if (principal == null || targetOrgId == null) {
+            return false;
+        }
+        if (principal.isSuperAdmin()) {
+            Long scopedTenant = CURRENT_TENANT.get();
+            if (scopedTenant != null) {
+                return scopedTenant.equals(targetOrgId);
+            }
+            return true;
+        }
+        return targetOrgId.equals(principal.getOrganizationId());
+    }
 }

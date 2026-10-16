@@ -36,7 +36,7 @@ public class AnalyticsController {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch", "id", branchId));
 
-        if (!principal.isSuperAdmin() && !branch.getOrganizationId().equals(principal.getOrganizationId())) {
+        if (!com.queueless.security.TenantContext.isAuthorizedForTenant(branch.getOrganizationId(), principal)) {
             throw new AccessDeniedException("Access denied: Branch does not belong to user's organization");
         }
     }

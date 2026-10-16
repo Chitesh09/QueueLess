@@ -36,8 +36,8 @@ public class TenantFilter extends OncePerRequestFilter {
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof QueuelessUserPrincipal principal) {
-            if (principal.isSuperAdmin() && requestedTenantId != null) {
-                // SUPER_ADMIN can act on behalf of a specific tenant via X-Tenant-ID
+            if (principal.isSuperAdmin()) {
+                // SUPER_ADMIN can act on behalf of a specific tenant via X-Tenant-ID; if omitted, tenantId remains null (global scope)
                 tenantId = requestedTenantId;
             } else {
                 // All other roles strictly derive tenantId from their authenticated principal
@@ -49,7 +49,7 @@ public class TenantFilter extends OncePerRequestFilter {
             if (StringUtils.hasText(bearerToken) && tokenProvider.validateToken(bearerToken)) {
                 Long jwtTenantId = tokenProvider.getOrganizationIdFromToken(bearerToken);
                 String role = tokenProvider.getRoleFromToken(bearerToken);
-                if ("SUPER_ADMIN".equalsIgnoreCase(role) && requestedTenantId != null) {
+                if ("SUPER_ADMIN".equalsIgnoreCase(role)) {
                     tenantId = requestedTenantId;
                 } else {
                     tenantId = jwtTenantId; // Trust JWT claim strictly

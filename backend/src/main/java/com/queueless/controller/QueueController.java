@@ -134,10 +134,8 @@ public class QueueController {
         boolean isAuthorizedOwner = false;
 
         if (principal != null) {
-            if (principal.isSuperAdmin()) {
-                isAuthorizedOwner = true;
-            } else if (principal.isOperator() || principal.isBranchAdmin() || principal.isOrgAdmin()) {
-                isAuthorizedOwner = token.getOrganizationId() != null && token.getOrganizationId().equals(principal.getOrganizationId());
+            if (principal.isOperator() || principal.isBranchAdmin() || principal.isOrgAdmin() || principal.isSuperAdmin()) {
+                isAuthorizedOwner = com.queueless.security.TenantContext.isAuthorizedForTenant(token.getOrganizationId(), principal);
             } else {
                 isAuthorizedOwner = token.getUserId() != null && token.getUserId().equals(principal.getUserId());
             }
