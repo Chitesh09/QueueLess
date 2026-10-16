@@ -68,7 +68,7 @@ public class TenantFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             TenantContext.clear();
-            MDCUtil.clear();
+            MDCUtil.clearTenantId();
         }
     }
 

@@ -2,7 +2,9 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://queuel
 export const DEFAULT_TENANT_ID = import.meta.env.VITE_DEFAULT_TENANT_ID || '1';
 
 export const WS_URL = import.meta.env.VITE_WS_URL || 
-  (API_BASE_URL.replace(/^http/, 'ws') + '/ws');
+  (API_BASE_URL.startsWith('https://') 
+    ? API_BASE_URL.replace(/^https:\/\//, 'wss://') + '/ws'
+    : API_BASE_URL.replace(/^http:\/\//, 'ws://') + '/ws');
 
 export const STORAGE_KEYS = {
   TOKEN: 'queueless_jwt_token',

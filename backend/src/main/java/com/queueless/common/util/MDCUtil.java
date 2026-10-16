@@ -16,12 +16,20 @@ public class MDCUtil {
         MDC.put(CORRELATION_ID, correlationId);
     }
 
+    public static String getCorrelationId() {
+        return MDC.get(CORRELATION_ID);
+    }
+
     public static void setTenantId(Long tenantId) {
         if (tenantId != null) {
             MDC.put(TENANT_ID, String.valueOf(tenantId));
         } else {
-            MDC.put(TENANT_ID, "SYSTEM");
+            MDC.put(TENANT_ID, "GLOBAL");
         }
+    }
+
+    public static void clearTenantId() {
+        MDC.remove(TENANT_ID);
     }
 
     public static void clear() {

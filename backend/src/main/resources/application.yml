@@ -63,6 +63,18 @@ springdoc:
     path: /swagger-ui.html
     operationsSorter: method
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+      probes:
+        enabled: true
+
 logging:
   level:
     root: INFO

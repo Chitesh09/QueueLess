@@ -12,7 +12,7 @@ RUN ./mvnw dependency:go-offline -B
 
 COPY src ./src
 
-RUN ./mvnw clean package -DskipTests -B
+RUN ./mvnw clean package -B
 
 # Stage 2: Runtime Container
 FROM eclipse-temurin:21-jre-alpine

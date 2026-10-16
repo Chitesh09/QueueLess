@@ -26,10 +26,14 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    private final CorrelationIdFilter correlationIdFilter;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final TenantFilter tenantFilter;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, TenantFilter tenantFilter) {
+    public SecurityConfig(CorrelationIdFilter correlationIdFilter,
+                          JwtAuthenticationFilter jwtAuthenticationFilter,
+                          TenantFilter tenantFilter) {
+        this.correlationIdFilter = correlationIdFilter;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.tenantFilter = tenantFilter;
     }
@@ -82,8 +86,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 );
 
+        http.addFilterBefore(correlationIdFilter, org.springframework.security.web.context.SecurityContextHolderFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-        http.addFilterAfter(tenantFilter, JwtAuthenticationFilter.class);
+        http.addFilterAfter(tenantFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
