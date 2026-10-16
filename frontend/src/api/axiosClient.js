@@ -16,6 +16,11 @@ axiosClient.interceptors.request.use(
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    } else {
+      const guestToken = localStorage.getItem('queueless_guest_token');
+      if (guestToken) {
+        config.headers['X-Guest-Token'] = guestToken;
+      }
     }
 
     const tenantId = localStorage.getItem(STORAGE_KEYS.TENANT_ID) || DEFAULT_TENANT_ID;
@@ -26,9 +31,15 @@ axiosClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Handle 401, 403, 409, 429, 500 & Offline errors
+// Response Interceptor: Capture guest token and handle errors
 axiosClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const guestToken = response.headers?.['x-guest-token'];
+    if (guestToken) {
+      localStorage.setItem('queueless_guest_token', guestToken);
+    }
+    return response;
+  },
   (error) => {
     if (!error.response) {
       toast.error('Network Error: Unable to connect to server. Check connection.');

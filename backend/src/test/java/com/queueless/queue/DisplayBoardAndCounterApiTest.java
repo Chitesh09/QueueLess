@@ -41,6 +41,7 @@ class DisplayBoardAndCounterApiTest {
     private CounterRepository counterRepository;
     private CounterServiceMappingRepository csmRepository;
     private QueueBroadcaster queueBroadcaster;
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private QueueController queueController;
     private CounterController counterController;
@@ -58,6 +59,7 @@ class DisplayBoardAndCounterApiTest {
         counterRepository = mock(CounterRepository.class);
         csmRepository = mock(CounterServiceMappingRepository.class);
         queueBroadcaster = mock(QueueBroadcaster.class);
+        eventPublisher = mock(org.springframework.context.ApplicationEventPublisher.class);
 
         queueController = new QueueController(
                 queueEngine,
@@ -76,12 +78,13 @@ class DisplayBoardAndCounterApiTest {
                 csmRepository,
                 tokenRepository,
                 tokenService,
-                queueBroadcaster
+                queueBroadcaster,
+                eventPublisher
         );
     }
 
     @Test
-    @DisplayName("getDisplayBoard returns called and waiting tokens with branch metadata")
+    @DisplayName("getDisplayBoard returns called and waiting tokens with sanitized public data")
     void getDisplayBoard_returnsPopulatedSnapshot() {
         Branch branch = Branch.builder()
                 .id(1L)
@@ -93,13 +96,13 @@ class DisplayBoardAndCounterApiTest {
         Token calledToken = Token.builder().id(10L).tokenNumber("OPD-010").status("CALLED").build();
         Token waitingToken = Token.builder().id(11L).tokenNumber("OPD-011").status("WAITING").build();
 
-        TokenResponse calledResp = TokenResponse.builder().id(10L).tokenNumber("OPD-010").status("CALLED").build();
-        TokenResponse waitingResp = TokenResponse.builder().id(11L).tokenNumber("OPD-011").status("WAITING").build();
+        TokenResponse calledResp = TokenResponse.builder().id(10L).tokenNumber("OPD-010").status("CALLED").qrSignature(null).build();
+        TokenResponse waitingResp = TokenResponse.builder().id(11L).tokenNumber("OPD-011").status("WAITING").qrSignature(null).build();
 
         when(tokenRepository.findByBranchIdAndStatusInOrderByCalledAtDesc(eq(1L), any())).thenReturn(List.of(calledToken));
         when(tokenRepository.findByBranchIdAndStatusOrderByCreatedAtAsc(1L, "WAITING")).thenReturn(List.of(waitingToken));
-        when(tokenService.mapToTokenResponse(calledToken)).thenReturn(calledResp);
-        when(tokenService.mapToTokenResponse(waitingToken)).thenReturn(waitingResp);
+        when(tokenService.mapToPublicTokenResponse(calledToken)).thenReturn(calledResp);
+        when(tokenService.mapToPublicTokenResponse(waitingToken)).thenReturn(waitingResp);
 
         ResponseEntity<ApiResponse<DisplayBoardResponse>> response = queueController.getDisplayBoard(1L);
 
@@ -110,8 +113,10 @@ class DisplayBoardAndCounterApiTest {
         assertThat(board.getBranchName()).isEqualTo("Main Campus OPD");
         assertThat(board.getCalledTokens()).hasSize(1);
         assertThat(board.getCalledTokens().get(0).getTokenNumber()).isEqualTo("OPD-010");
+        assertThat(board.getCalledTokens().get(0).getQrSignature()).isNull();
         assertThat(board.getWaitingTokens()).hasSize(1);
         assertThat(board.getWaitingTokens().get(0).getTokenNumber()).isEqualTo("OPD-011");
+        assertThat(board.getWaitingTokens().get(0).getQrSignature()).isNull();
     }
 
     @Test
@@ -136,8 +141,8 @@ class DisplayBoardAndCounterApiTest {
     }
 
     @Test
-    @DisplayName("pauseCounter broadcasts counter status update")
-    void pauseCounter_updatesStatusAndBroadcasts() {
+    @DisplayName("pauseCounter publishes CounterPausedEvent for transactional broadcast")
+    void pauseCounter_updatesStatusAndPublishesEvent() {
         Counter counter = Counter.builder().id(3L).branchId(1L).status("ONLINE").name("Counter 3").build();
         when(counterRepository.findById(3L)).thenReturn(Optional.of(counter));
 
@@ -146,6 +151,20 @@ class DisplayBoardAndCounterApiTest {
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(counter.getStatus()).isEqualTo("PAUSED");
         verify(counterRepository).save(counter);
-        verify(queueBroadcaster).broadcastCounterStatus(1L, 3L, "PAUSED");
+        verify(eventPublisher).publishEvent(any(com.queueless.event.CounterPausedEvent.class));
+    }
+
+    @Test
+    @DisplayName("resumeCounter publishes CounterResumedEvent for transactional broadcast")
+    void resumeCounter_updatesStatusAndPublishesEvent() {
+        Counter counter = Counter.builder().id(3L).branchId(1L).status("PAUSED").name("Counter 3").build();
+        when(counterRepository.findById(3L)).thenReturn(Optional.of(counter));
+
+        ResponseEntity<ApiResponse<String>> response = counterController.resumeCounter(3L);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(counter.getStatus()).isEqualTo("ONLINE");
+        verify(counterRepository).save(counter);
+        verify(eventPublisher).publishEvent(any(com.queueless.event.CounterResumedEvent.class));
     }
 }

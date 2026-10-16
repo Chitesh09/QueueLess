@@ -54,9 +54,21 @@ class QueueBroadcasterTest {
                 .counterId(5L)
                 .tokenNumber("OPD-001")
                 .status("CALLED")
+                .qrSignature("hmac_secret_signature")
+                .build();
+
+        TokenResponse publicTokenResponse = TokenResponse.builder()
+                .id(100L)
+                .branchId(1L)
+                .serviceId(2L)
+                .counterId(5L)
+                .tokenNumber("OPD-001")
+                .status("CALLED")
+                .qrSignature(null)
                 .build();
 
         when(tokenService.mapToTokenResponse(token)).thenReturn(tokenResponse);
+        when(tokenService.mapToPublicTokenResponse(token)).thenReturn(publicTokenResponse);
 
         broadcaster.handleTokenCalled(new TokenCalledEvent(this, token, 5L));
 
@@ -68,12 +80,14 @@ class QueueBroadcasterTest {
         assertThat(branchEvent.getBranchId()).isEqualTo(1L);
         assertThat(branchEvent.getCounterId()).isEqualTo(5L);
         assertThat(branchEvent.getToken().getTokenNumber()).isEqualTo("OPD-001");
+        assertThat(branchEvent.getToken().getQrSignature()).isNull(); // Sanitized for public display
 
         // Service topic
         verify(messagingTemplate).convertAndSend(eq(QueueConstants.WS_TOPIC_QUEUE + "1/2"), any(QueueEventResponse.class));
 
-        // Individual customer ticket topic
+        // Individual customer ticket topic receives full private tokenResponse with qrSignature
         verify(messagingTemplate).convertAndSend(eq(QueueConstants.WS_TOPIC_TOKEN + "100"), eq(tokenResponse));
+        assertThat(tokenResponse.getQrSignature()).isEqualTo("hmac_secret_signature");
     }
 
     @Test
@@ -93,7 +107,14 @@ class QueueBroadcasterTest {
                 .status("COMPLETED")
                 .build();
 
+        TokenResponse publicTokenResponse = TokenResponse.builder()
+                .id(101L)
+                .tokenNumber("OPD-002")
+                .status("COMPLETED")
+                .build();
+
         when(tokenService.mapToTokenResponse(token)).thenReturn(tokenResponse);
+        when(tokenService.mapToPublicTokenResponse(token)).thenReturn(publicTokenResponse);
 
         broadcaster.handleTokenCompleted(new TokenCompletedEvent(this, token));
 

@@ -16,6 +16,7 @@ class WebSocketService {
     this.statusListeners = new Set();
     this.messageListeners = new Set();
     this.topicCallbacks = new Map(); // destination -> Set of callbacks
+    this.topicHeaders = new Map(); // destination -> headers
     this.stompSubscriptions = new Map(); // destination -> StompSubscription
     this.recentEventTimestamps = new Map(); // eventKey -> timestampMs
   }
@@ -31,7 +32,17 @@ class WebSocketService {
 
     try {
       const token = authService.getStoredToken();
+      const guestToken = typeof window !== 'undefined' ? localStorage.getItem('queueless_guest_token') : null;
       const httpWsEndpoint = `${API_BASE_URL}/ws`;
+
+      const headers = {
+        'X-Tenant-ID': '1',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      } else if (guestToken) {
+        headers['X-Guest-Token'] = guestToken;
+      }
 
       this.client = new Client({
         webSocketFactory: () => {
@@ -40,10 +51,7 @@ class WebSocketService {
           }
           return new WebSocket(WS_URL);
         },
-        connectHeaders: {
-          Authorization: token ? `Bearer ${token}` : '',
-          'X-Tenant-ID': '1',
-        },
+        connectHeaders: headers,
         debug: () => {},
         reconnectDelay: 3000,
         heartbeatIncoming: 4000,
@@ -94,7 +102,7 @@ class WebSocketService {
     }
   }
 
-  subscribe(destination, callback) {
+  subscribe(destination, callback, headers = {}) {
     if (!destination || typeof callback !== 'function') {
       return { unsubscribe: () => {} };
     }
@@ -103,6 +111,9 @@ class WebSocketService {
       this.topicCallbacks.set(destination, new Set());
     }
     this.topicCallbacks.get(destination).add(callback);
+    if (headers && Object.keys(headers).length > 0) {
+      this.topicHeaders.set(destination, headers);
+    }
 
     if (this.client && this.client.connected) {
       this._ensureSubscription(destination);
@@ -117,6 +128,7 @@ class WebSocketService {
           callbacks.delete(callback);
           if (callbacks.size === 0) {
             this.topicCallbacks.delete(destination);
+            this.topicHeaders.delete(destination);
             const sub = this.stompSubscriptions.get(destination);
             if (sub) {
               try {
@@ -141,7 +153,9 @@ class WebSocketService {
   }
 
   subscribeToToken(tokenId, callback) {
-    return this.subscribe(`/topic/tokens/${tokenId}`, callback);
+    const guestToken = typeof window !== 'undefined' ? localStorage.getItem('queueless_guest_token') : null;
+    const headers = guestToken ? { 'X-Guest-Token': guestToken } : {};
+    return this.subscribe(`/topic/tokens/${tokenId}`, callback, headers);
   }
 
   _ensureSubscription(destination) {
@@ -149,10 +163,11 @@ class WebSocketService {
     if (this.stompSubscriptions.has(destination)) return;
 
     try {
+      const headers = this.topicHeaders.get(destination) || {};
       const sub = this.client.subscribe(destination, (message) => {
         try {
           const data = JSON.parse(message.body);
-          if (this._isDuplicate(data)) {
+          if (this._isDuplicate(data, destination)) {
             return;
           }
 
@@ -179,7 +194,7 @@ class WebSocketService {
         } catch (e) {
           console.error(`Error parsing message on ${destination}:`, e);
         }
-      });
+      }, headers);
 
       this.stompSubscriptions.set(destination, sub);
     } catch (e) {
@@ -187,20 +202,20 @@ class WebSocketService {
     }
   }
 
-  _isDuplicate(data) {
+  _isDuplicate(data, destination) {
     if (!data) return false;
     const now = Date.now();
 
-    // Clean old entries (> 5 seconds)
+    // Clean old entries (> 2.5 seconds window)
     for (const [key, timestamp] of this.recentEventTimestamps.entries()) {
-      if (now - timestamp > 5000) {
+      if (now - timestamp > 2500) {
         this.recentEventTimestamps.delete(key);
       }
     }
 
-    const eventKey = `${data.eventType || 'EVT'}_${data.token?.id || data.id || data.counterId || 'X'}_${data.token?.status || data.status || data.counterStatus || ''}_${data.timestamp || ''}`;
+    const eventKey = `${destination || ''}_${data.eventType || 'EVT'}_${data.token?.id || data.id || data.counterId || 'X'}_${data.token?.status || data.status || data.counterStatus || ''}_${data.timestamp || ''}`;
     if (this.recentEventTimestamps.has(eventKey)) {
-      return true; // Duplicate detected
+      return true; // Duplicate detected within 2.5s window
     }
 
     this.recentEventTimestamps.set(eventKey, now);

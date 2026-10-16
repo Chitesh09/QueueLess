@@ -77,6 +77,15 @@ public class TokenService {
                 .build();
     }
 
+    public TokenResponse mapToPublicTokenResponse(Token token) {
+        TokenResponse response = mapToTokenResponse(token);
+        if (response == null) return null;
+        response.setQrSignature(null);
+        response.setUserId(null);
+        response.setUserName(null);
+        return response;
+    }
+
     public Token getById(Long tokenId) {
         return tokenRepository.findById(tokenId)
                 .orElseThrow(() -> new ResourceNotFoundException("Token", "id", tokenId));

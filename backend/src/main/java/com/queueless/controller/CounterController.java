@@ -11,9 +11,13 @@ import com.queueless.dto.response.TokenResponse;
 import com.queueless.queue.QueueBroadcaster;
 import com.queueless.queue.QueueEngine;
 import com.queueless.queue.TokenService;
+import com.queueless.event.CounterPausedEvent;
+import com.queueless.event.CounterResumedEvent;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,19 +34,22 @@ public class CounterController {
     private final TokenRepository tokenRepository;
     private final TokenService tokenService;
     private final QueueBroadcaster queueBroadcaster;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CounterController(QueueEngine queueEngine,
                              CounterRepository counterRepository,
                              CounterServiceMappingRepository csmRepository,
                              TokenRepository tokenRepository,
                              TokenService tokenService,
-                             QueueBroadcaster queueBroadcaster) {
+                             QueueBroadcaster queueBroadcaster,
+                             ApplicationEventPublisher eventPublisher) {
         this.queueEngine = queueEngine;
         this.counterRepository = counterRepository;
         this.csmRepository = csmRepository;
         this.tokenRepository = tokenRepository;
         this.tokenService = tokenService;
         this.queueBroadcaster = queueBroadcaster;
+        this.eventPublisher = eventPublisher;
     }
 
     @GetMapping("/{counterId}/queue")
@@ -92,21 +99,23 @@ public class CounterController {
 
     @PostMapping("/{counterId}/pause")
     @Operation(summary = "Pause counter operations")
+    @Transactional
     public ResponseEntity<ApiResponse<String>> pauseCounter(@PathVariable Long counterId) {
         Counter counter = counterRepository.findById(counterId).orElseThrow();
         counter.setStatus("PAUSED");
         counterRepository.save(counter);
-        queueBroadcaster.broadcastCounterStatus(counter.getBranchId(), counterId, "PAUSED");
+        eventPublisher.publishEvent(new CounterPausedEvent(this, counterId));
         return ResponseEntity.ok(ApiResponse.success("PAUSED", "Counter paused"));
     }
 
     @PostMapping("/{counterId}/resume")
     @Operation(summary = "Resume counter operations")
+    @Transactional
     public ResponseEntity<ApiResponse<String>> resumeCounter(@PathVariable Long counterId) {
         Counter counter = counterRepository.findById(counterId).orElseThrow();
         counter.setStatus("ONLINE");
         counterRepository.save(counter);
-        queueBroadcaster.broadcastCounterStatus(counter.getBranchId(), counterId, "ONLINE");
+        eventPublisher.publishEvent(new CounterResumedEvent(this, counterId));
         return ResponseEntity.ok(ApiResponse.success("ONLINE", "Counter resumed"));
     }
 }

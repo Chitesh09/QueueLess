@@ -151,13 +151,13 @@ public class QueueController {
         List<Token> called = tokenRepository.findByBranchIdAndStatusInOrderByCalledAtDesc(branchId, List.of("CALLED", "CHECKED_IN"));
         List<TokenResponse> calledTokens = called.stream()
                 .limit(10)
-                .map(tokenService::mapToTokenResponse)
+                .map(tokenService::mapToPublicTokenResponse)
                 .collect(Collectors.toList());
 
         List<Token> waiting = tokenRepository.findByBranchIdAndStatusOrderByCreatedAtAsc(branchId, "WAITING");
         List<TokenResponse> waitingTokens = waiting.stream()
                 .limit(20)
-                .map(tokenService::mapToTokenResponse)
+                .map(tokenService::mapToPublicTokenResponse)
                 .collect(Collectors.toList());
 
         DisplayBoardResponse response = DisplayBoardResponse.builder()

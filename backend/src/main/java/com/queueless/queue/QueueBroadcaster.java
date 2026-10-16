@@ -10,6 +10,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Instant;
 
@@ -29,43 +31,43 @@ public class QueueBroadcaster {
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTokenCreated(TokenCreatedEvent event) {
         broadcastTokenUpdate(event.getToken(), "TOKEN_CREATED");
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTokenCalled(TokenCalledEvent event) {
         broadcastTokenUpdate(event.getToken(), "TOKEN_CALLED");
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTokenCheckedIn(TokenCheckedInEvent event) {
         broadcastTokenUpdate(event.getToken(), "TOKEN_CHECKED_IN");
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTokenCompleted(TokenCompletedEvent event) {
         broadcastTokenUpdate(event.getToken(), "TOKEN_COMPLETED");
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTokenExpired(TokenExpiredEvent event) {
         broadcastTokenUpdate(event.getToken(), "TOKEN_EXPIRED");
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleTokenSkipped(TokenSkippedEvent event) {
         broadcastTokenUpdate(event.getToken(), "TOKEN_SKIPPED");
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleCounterPaused(CounterPausedEvent event) {
         counterRepository.findById(event.getCounterId()).ifPresent(counter -> {
             broadcastCounterStatus(counter.getBranchId(), counter.getId(), "PAUSED");
@@ -73,7 +75,7 @@ public class QueueBroadcaster {
     }
 
     @Async
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleCounterResumed(CounterResumedEvent event) {
         counterRepository.findById(event.getCounterId()).ifPresent(counter -> {
             broadcastCounterStatus(counter.getBranchId(), counter.getId(), "ONLINE");
@@ -98,27 +100,28 @@ public class QueueBroadcaster {
 
     private void broadcastTokenUpdate(com.queueless.domain.entity.Token token, String eventType) {
         if (token == null) return;
-        TokenResponse response = tokenService.mapToTokenResponse(token);
+        TokenResponse privateResponse = tokenService.mapToTokenResponse(token);
+        TokenResponse publicResponse = tokenService.mapToPublicTokenResponse(token);
 
-        QueueEventResponse eventResponse = QueueEventResponse.builder()
+        QueueEventResponse publicEventResponse = QueueEventResponse.builder()
                 .eventType(eventType)
                 .branchId(token.getBranchId())
                 .serviceId(token.getServiceId())
                 .counterId(token.getCounterId())
-                .token(response)
+                .token(publicResponse)
                 .timestamp(Instant.now())
                 .build();
 
-        // Topic 1: Branch queue channel for display board & operator dashboards
+        // Topic 1: Branch queue channel for public display board & waiting room TV (sanitized public token)
         String branchTopic = QueueConstants.WS_TOPIC_BRANCH_QUEUE + token.getBranchId() + "/queue";
-        messagingTemplate.convertAndSend(branchTopic, eventResponse);
+        messagingTemplate.convertAndSend(branchTopic, publicEventResponse);
 
-        // Topic 2: Service queue channel for service-specific clients
+        // Topic 2: Service queue channel for service-specific clients (sanitized public token)
         String serviceQueueTopic = QueueConstants.WS_TOPIC_QUEUE + token.getBranchId() + "/" + token.getServiceId();
-        messagingTemplate.convertAndSend(serviceQueueTopic, eventResponse);
+        messagingTemplate.convertAndSend(serviceQueueTopic, publicEventResponse);
 
-        // Topic 3: Individual token user channel for customer live ticket view
+        // Topic 3: Private customer token channel (full private token response)
         String tokenTopic = QueueConstants.WS_TOPIC_TOKEN + token.getId();
-        messagingTemplate.convertAndSend(tokenTopic, response);
+        messagingTemplate.convertAndSend(tokenTopic, privateResponse);
     }
 }
